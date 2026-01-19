@@ -57,9 +57,16 @@ const roleFunc = {
 export function runCreep(creep) {
     for(var name in Game.creeps) {
         var creep = Game.creeps[name];
+        // Ensure creep still exists (garbage collection check)
+        if (!creep) continue;
+        
         var role = creep.memory.role;
         if(roleFunc[role]) {
-            roleFunc[role].run(creep);
+            try {
+                roleFunc[role].run(creep);
+            } catch (e) {
+                console.log(`Error running creep ${name} (role: ${role}):`, e);
+            }
         }
     }
 }

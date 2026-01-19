@@ -24,8 +24,9 @@ export default {
      * 主运行函数 - 遍历所有房间并处理生成逻辑
      */
     run: withCpuMonitor('SpawnManager.run', function() {
-        for (const room of Object.values(Game.rooms)) {
-            if( !room.my ) continue;
+        for (const roomName in Game.rooms) {
+            const room = Game.rooms[roomName];
+            if( !room.controller || !room.controller.my ) continue;
             //console.log(room.name);
             this.processRoom(room);
             this.processQueue(room);
@@ -37,9 +38,10 @@ export default {
      * @param {Room} room - 要处理的房间对象
      */
     processRoom: withCpuMonitor('SpawnManager.processRoom', function(room) {
-        if (!room.controller.my) return;
+        if (!room.controller || !room.controller.my) return;
         
         // 安全初始化队列内存和任务列表
+        if (!Memory.rooms) Memory.rooms = {};
         if (!Memory.rooms[room.name]) Memory.rooms[room.name] = {};
         if (!Memory.rooms[room.name].spawnQueue) Memory.rooms[room.name].spawnQueue = [];
         if (!Memory.rooms[room.name].tasks) Memory.rooms[room.name].tasks = [];
@@ -49,7 +51,7 @@ export default {
         if (room.energyAvailable < room.energyCapacityAvailable * 0.7 && 
             !tasksList.some(task => task.type === 'fillExtension')) {
             tasksList.push({ type: 'fillExtension' });
-            console.log(`房间 ${room.name} 能量不足，已推送 fillExtension 任务。`);
+            // console.log(`房间 ${room.name} 能量不足，已推送 fillExtension 任务。`);
             return;
         }
 
@@ -71,6 +73,7 @@ export default {
             global.creepNumCheckLastTime = Game.time;
             
             // 预初始化所有存在内存的房间（重要改进）
+            if (!Memory.rooms) Memory.rooms = {}; // Ensure Memory.rooms exists
             for (const roomName in Memory.rooms) {
                 if (!global.creepNum[roomName]) {
                     global.creepNum[roomName] = {};
@@ -81,7 +84,10 @@ export default {
                 }
             }
             // 遍历所有 creep 进行统计（优化后的版本）
-            for (const creep of Object.values(Game.creeps)) {
+            for (const creepName in Game.creeps) {
+                const creep = Game.creeps[creepName];
+                if (!creep) continue;
+                
                 const { role, home } = creep.memory;
                 if (!role || !home) continue;
                 // 确保房间记录存在
@@ -102,11 +108,12 @@ export default {
             }
         }
 
-        ///console.log(global.creepNum['E58N14']['manager']);
-
         // 添加新增角色的任务
         if (Game.time % 1 === 0) {
             for (const [role, config] of Object.entries(ROLE_CONFIGS)) {
+                // Ensure global.creepNum has entry for this room
+                if (!global.creepNum[room.name]) global.creepNum[room.name] = {};
+                
                 const currentLimit = typeof config.limit === 'function' ? config.limit(room) : config.limit;
                 const count = global.creepNum[room.name][role] || 0;
                 //console.log(role,currentLimit,count);
@@ -124,8 +131,8 @@ export default {
 
         // 输出当前生成任务列表
         if (tasks.length > 0) {
-            console.log(`[${room.name}] 当前生成任务: ${tasks.map(task => task.role).join(', ')}`);
-            console.log(`[${room.name}] 当前 ${tasks[0].role} 数量:`, global.creepNum[room.name][tasks[0].role] );
+            // console.log(`[${room.name}] 当前生成任务: ${tasks.map(task => task.role).join(', ')}`);
+            // console.log(`[${room.name}] 当前 ${tasks[0].role} 数量:`, global.creepNum[room.name][tasks[0].role] );
         }
     
         return tasks.filter(task => task.valid).sort((a, b) => b.priority - a.priority);
@@ -139,13 +146,15 @@ export default {
      */
     getBodyForRoom: withCpuMonitor('SpawnManager.getBodyForRoom', function(room, role) {
         const config = ROLE_CONFIGS[role];
+        if (!config) return [WORK, CARRY, MOVE];
+        
         const controllerLevel = room.controller.level;  // 获取控制器等级
         //const energyCapacity = room.energyCapacityAvailable;  // 获取房间的最大能量容量
         //console.log(controllerLevel);
         //console.log(config.body);
         // 获取控制器等级对应的身体部件配置
         const bodyConfig = config.body[controllerLevel];
-        return bodyConfig;
+        return bodyConfig || [WORK, CARRY, MOVE]; // Fallback
     }),
 
     /**
@@ -154,11 +163,14 @@ export default {
      * @param {Array} tasks - 待处理任务列表
      */
     executeTasks: withCpuMonitor('SpawnManager.executeTasks', function(room, tasks) {
+        if (!Memory.rooms[room.name]) Memory.rooms[room.name] = {};
+        if (!Memory.rooms[room.name].spawnQueue) Memory.rooms[room.name].spawnQueue = [];
+        
         const spawnQueue = Memory.rooms[room.name].spawnQueue; // 获取当前房间的生成队列
         
         for (const task of tasks) { // 遍历待处理的任务列表
             const body = task.body; // 获取任务的身体部件配置
-            if (body.length === 0 || body.length > 50) continue; // 检查身体部件的有效性，长度必须在 1 到 50 之间
+            if (!body || body.length === 0 || body.length > 50) continue; // 检查身体部件的有效性，长度必须在 1 到 50 之间
             // 检查生成队列中是否已存在相同角色的任务
             const existingTask = spawnQueue.find(t => t.role === task.role);
             if ( existingTask ) { // 如果找到了相同角色的任务
@@ -181,16 +193,6 @@ export default {
                     cost: calculateCost(body) // 计算任务的能量成本
                 });
             }
-            
-            // // 如果队列中没有相同角色的任务，并且可以生成新的 creep
-            // if (this.shouldSpawn(room, task.role, body.length)) {
-            //     spawnQueue.push({ // 将新任务添加到生成队列
-            //         role: task.role,
-            //         body: body,
-            //         priority: task.priority,
-            //         cost: calculateCost(body) // 计算任务的能量成本
-            //     });
-            // }
         }
         spawnQueue.sort((a, b) => b.priority - a.priority); // 按优先级对生成队列进行排序
     }),
@@ -200,11 +202,12 @@ export default {
      * @param {Room} room - 房间对象
      */
     processQueue: withCpuMonitor('SpawnManager.processQueue', function(room) {
+        if (!Memory.rooms[room.name]) return;
         const queue = Memory.rooms[room.name].spawnQueue; // 获取当前房间的生成队列
 
         if (!queue || queue.length === 0) return; // 如果队列为空，则直接返回
 
-        const spawns = room.spawn; // 查找所有空闲的 spawn
+        const spawns = room.find(FIND_MY_SPAWNS); // 查找所有空闲的 spawn
         if (spawns.length === 0) return; // 如果没有可用的 spawn，则直接返回
 
         const roomEnergy = room.energyAvailable;
@@ -220,7 +223,7 @@ export default {
             const task = queue[i]; // 获取当前任务（队列中的任务按优先级排列）
             const spawn = spawns[i]; // 根据任务的索引选择对应的spawn（0号任务分配给0号spawn，1号任务分配给1号spawn，依此类推）
             if (task.cost > roomEnergy) continue; // 如果任务所需能量大于当前房间可用能量，跳过该任务
-            if (spawns.spawning) continue;
+            if (spawn.spawning) continue;
             
             if (this.tryAssignTask(spawn, task) ) { // 尝试将任务分配给 spawn
                 //console.log(123);
@@ -250,7 +253,7 @@ export default {
 
         // 获取角色基础内存配置
         const roleConfig = ROLE_CONFIGS[role];
-        const baseMemory = typeof roleConfig.memory === 'function' 
+        const baseMemory = (roleConfig && typeof roleConfig.memory === 'function')
             ? roleConfig.memory(room) 
             : {};
         
@@ -260,7 +263,7 @@ export default {
             ...baseMemory,          // 角色基础配置
             workLoc: workLoc,       // 添加工位号
             home: room.name,        // 记录所属房间
-            //role: role              // 确保role字段优先级最高
+            role: role              // 确保role字段优先级最高
         };
     
         const name = InsectNameManager.registerName(room);
@@ -272,24 +275,10 @@ export default {
             console.log(`[${room.name}] 成功生成 ${task.role}，名称: ${name}，workLoc: ${workLoc}`);
             return true;
         } else {
-            console.log(`[${room.name}] 生成失败 ${result}，角色：${role}`);
+            // console.log(`[${room.name}] 生成失败 ${result}，角色：${role}`);
             return false;
         }
     }),
-
-    // shouldSpawn: withCpuMonitor('SpawnManager.shouldSpawn', function(room, role) {
-    //     const existing = room.find(FIND_MY_CREEPS, {
-    //         filter: c => c.memory.role === role &&
-    //                     c.ticksToLive < 150
-    //     }).length;
-
-    //     // 使用ROLE_CONFIGS中定义的limit
-    //     const config = ROLE_CONFIGS[role];
-    //     const currentLimit = typeof config.limit === 'function' ? config.limit(room) : config.limit;
-    //     //console.log(currentLimit);
-        
-    //     return existing < currentLimit;
-    // }),
 
     cleanupQueue: withCpuMonitor('SpawnManager.cleanupQueue', function(queue, maxEnergy) {
         for (let i = queue.length - 1; i >= 0; i--) {
@@ -310,7 +299,7 @@ export default {
             if (spawn.spawning) {
                 // 生成中的状态
                 const creep = Game.creeps[spawn.spawning.name];
-                const role = creep.memory.role;
+                const role = creep ? creep.memory.role : 'Unknown';
                 const remaining = spawn.spawning.remainingTime;
                 visual.text(
                     `🛠️${role} ${remaining}s`,
@@ -347,6 +336,6 @@ export default {
  * @returns {number} 总能量成本
  */
 function calculateCost(body) {
+    if (!body) return 0;
     return body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
 }
-

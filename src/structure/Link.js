@@ -5,59 +5,27 @@ var Link = {
      */  
     run: function( roomName ) {  
         // 获取当前房间的内存 
+        if (!Memory.rooms[roomName]) {
+            Memory.rooms[roomName] = {};
+        }
         const roomMemory = Memory.rooms[roomName];  
-        const tasksList = Memory.rooms[roomName].tasks;  
+        
+        if (!roomMemory.tasks) {
+            roomMemory.tasks = [];
+        }
+        const tasksList = roomMemory.tasks;  
+        
         // 检查Link的职责  
         let room = Game.rooms[roomName];
+        if (!room) return;
+        
         const links = room.link;
-        if( roomName === 'E55N9'){
-            if( links[3] ){
-                Memory.rooms.E55N9.upgradeLinkId = links[3].id;
-            }
-        }
-        if( roomName === 'E56N13'){
-            // console.log(links)
-            if( links[2] ){
-                Memory.rooms.E56N13.upgradeLinkId = links[2].id;
-            }
-        }
-        if( roomName === 'E53N1'){
-            // console.log(links)
-            if( links[2] ){
-                Memory.rooms.E53N1.centerLinkId = links[2].id;
-                Memory.rooms.E53N1.upgradeLinkId = '123';
-            }
-        }
-        if( roomName === 'E58N14'){
-            // console.log(links)
-            if( links[3] ){
-                Memory.rooms.E58N14.upgradeLinkId = links[3].id;
-            }
-        }
-        if( roomName === 'E56N17'){
-            if( links[3] ){
-                Memory.rooms.E56N17.upgradeLinkId = links[3].id;
-            }
-        }
-        if( roomName === 'E53N19'){
-            if( links[3] ){
-                Memory.rooms.E53N19.upgradeLinkId = links[3].id;
-                Memory.rooms.E53N19.centerLinkId = links[2].id;
-            }
-            if( links[2] ){
-                Memory.rooms.E53N19.centerLinkId = links[2].id;
-            }
-        }
-        if( roomName === 'E54N19'){
-            if( links[4] ){
-                Memory.rooms.E54N19.upgradeLinkId = links[4].id;
-            }
-        }
-        if( roomName === 'E55N21'){
-            if( links[3] ){
-                Memory.rooms.E55N21.upgradeLinkId = links[3].id;
-            }
-        }
+        if (!links || links.length === 0) return;
+
+        // Generic Logic for Auto-Link Configuration could be added here.
+        // For now, we rely on roomMemory.centerLinkId and upgradeLinkId being set manually or by other logic.
+        // If they are not set, links default to SourceLink behavior.
+
         for(let link of links){
             if (roomMemory.centerLinkId === link.id) {  
                 // 作为CenterLink的行为  
@@ -78,7 +46,10 @@ var Link = {
      * @param {Object} roomMemory  房间内存对象，包含关于房间状态的信息    
      */    
     runAsCenterLink: function(link, roomMemory, tasks) {    
-        const upgradeLink = link.room[roomMemory.upgradeLinkId];  
+        if (!roomMemory.upgradeLinkId) return;
+        const upgradeLink = Game.getObjectById(roomMemory.upgradeLinkId); // Use Game.getObjectById
+        if (!upgradeLink) return;
+
         if(tasks.some(task => task.type === 'transferToUpgradeLink')){
             if(link.store[RESOURCE_ENERGY] > 700){
                 const result = link.transferEnergy(upgradeLink);
@@ -116,26 +87,24 @@ var Link = {
      * @param {Object} roomMemory - 房间内存对象  
      */  
     runAsSourceLink: function(link, roomMemory, tasksList) {  
-        const centerLink = link.room[roomMemory.centerLinkId];  
-        const upgradeLink = link.room[roomMemory.upgradeLinkId];  
+        const centerLink = roomMemory.centerLinkId ? Game.getObjectById(roomMemory.centerLinkId) : null;  
+        const upgradeLink = roomMemory.upgradeLinkId ? Game.getObjectById(roomMemory.upgradeLinkId) : null;  
+        
+        if (link.cooldown > 0) return;
+        if (link.store.getUsedCapacity(RESOURCE_ENERGY) < link.store.getCapacity(RESOURCE_ENERGY) * 0.5) return;
+
         if (upgradeLink) {  
             // 检查UpgradeLink是否存在  
             if (upgradeLink.store[RESOURCE_ENERGY] <= 600 ) {  
                 // 如果存在UpgradeLink且其能量未满，则向UpgradeLink传输能量  
-                if (link.transferEnergy(upgradeLink) === OK) {  
-                    //console.log('UpgradeLink能量不足，向upgradeLink发送能量成功。传输冷却时间：', link.cooldown);  
-                } 
+                link.transferEnergy(upgradeLink);
             } else if (centerLink) {  
                 // 否则，如果CenterLink存在，则向CenterLink传输能量  
-                if (link.transferEnergy(centerLink) === OK) {  
-                    //console.log('UpgradeLink能量已满，向centerLink发送能量成功。传输冷却时间：', link.cooldown);  
-                } 
+                link.transferEnergy(centerLink);
             }  
         } else if (centerLink) {  
             // 否则，如果CenterLink存在，则向CenterLink传输能量  
-            if (link.transferEnergy(centerLink) === OK) {  
-                //console.log('UpgradeLink能量已满，向centerLink发送能量成功。传输冷却时间：', link.cooldown);  
-            } 
+            link.transferEnergy(centerLink);
         } 
     }
 };  

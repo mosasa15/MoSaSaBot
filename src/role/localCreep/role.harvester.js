@@ -1,16 +1,19 @@
 var roleHarvester = {  
     /** @param {Creep} creep **/  
     run: function(creep) {  
-        const startCpu = Game.cpu.getUsed();  // 记录开始时间
         try {
             creep.memory.dontPullMe = true;  
-            //creep.say('🌾',true);
             const workLoc = creep.memory.workLoc;
             const room = creep.room;
             const { source } = room;
-            let targetSource = source ? source[workLoc] : null;
-            //let targetTransfer = link ? link[workLoc] : null;
-
+            
+            if (!source || !source[workLoc]) {
+                // Fallback if source is not found (shouldn't happen if workLoc is correct)
+                return; 
+            }
+            
+            let targetSource = source[workLoc];
+            
             // 确定当前应该使用的运输目标
             let currentTarget = this.determineTarget(creep, targetSource);
             
@@ -19,24 +22,44 @@ var roleHarvester = {
                 if (creep.harvest(targetSource) === ERR_NOT_IN_RANGE) {
                     creep.moveTo(targetSource, { visualizePathStyle: { stroke: '#ffaa00' } });
                 }
-                
-                // // 检查是否需要建造container
-                // if (room.controller.level < 4 && !storage && creep.pos.inRangeTo(targetSource,1)) {
-                //     this.handleContainerConstruction(creep);
-                // }
             } 
             // 如果背包满了，开始转移资源
             else {
-                this.transferResources(creep, currentTarget);
+                if (currentTarget) {
+                    this.transferResources(creep, currentTarget);
+                } else {
+                    // No target? Drop it or build a container?
+                    // For now, if no container/link/storage, maybe transfer to Spawn/Extension?
+                    // Or just drop it if we are a static miner. 
+                    // But for generic RCL1, we are likely a mobile harvester.
+                    // If mobile harvester, we should look for Spawn/Extension if no storage.
+                    const spawn = creep.pos.findClosestByRange(FIND_MY_SPAWNS);
+                    const extension = creep.pos.findClosestByRange(FIND_MY_STRUCTURES, {
+                        filter: (s) => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                    });
+                    
+                    let fallbackTarget = extension || spawn;
+                    
+                    // If Spawn is full, maybe build construction site?
+                    if (!fallbackTarget || fallbackTarget.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
+                        const site = creep.pos.findClosestByRange(FIND_CONSTRUCTION_SITES);
+                        if (site) {
+                            if (creep.build(site) === ERR_NOT_IN_RANGE) {
+                                creep.moveTo(site);
+                            }
+                            return;
+                        }
+                        // Upgrade controller if nothing else
+                        if (creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
+                            creep.moveTo(creep.room.controller);
+                        }
+                    } else {
+                        this.transferResources(creep, fallbackTarget);
+                    }
+                }
             }
-        } finally {
-            const usedCpu = Game.cpu.getUsed() - startCpu;
-            //console.log(`[CPU] ${creep.name} 消耗: ${usedCpu.toFixed(2)}`);
-            // 计算最大值和平均值
-            // 预警提示（当单次消耗超过3.5或平均超过2时）
-            if (usedCpu > 3.5) {
-                console.log(`⚠️ [CPU警告] ${creep.name} 单次CPU消耗过高：${usedCpu.toFixed(2)}`);
-            }
+        } catch (e) {
+            console.log(`Error in Harvester ${creep.name}: ${e}`);
         }
     },
 
@@ -64,19 +87,6 @@ var roleHarvester = {
 
         return null;
     },
-
-    // // 处理container的建造
-    // handleContainerConstruction: function(creep) {
-    //     const constructionSite = creep.pos.lookFor(LOOK_CONSTRUCTION_SITES)[0];
-    //     if (!constructionSite) {
-    //         // 检查当前位置是否已有container
-    //         const containers = creep.pos.lookFor(LOOK_STRUCTURES).filter(s => s.structureType === STRUCTURE_CONTAINER);
-    //         if (containers.length === 0) {
-    //             // 在当前位置创建container的建筑工地
-    //             creep.pos.createConstructionSite(STRUCTURE_CONTAINER);
-    //         }
-    //     }
-    // },
 
     // 寻找能量源附近的container
     findSourceContainer: function(source) {
