@@ -3,10 +3,11 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "rollup -cw",
+    "build": "rollup -c",
     "test": "echo \"Error: no test specified\" && exit 1",
     "push": "rollup -cw --environment DEST:main",
     "local": "rollup -cw --environment DEST:local",
+    "push:E9C50": "rollup -cw --environment DEST:E9C50",
     "submit": "node scripts/submit.js"
   },
   "keywords": [],
@@ -18,24 +19,24 @@
     "@rollup/plugin-node-resolve": "^15.3.0",
     "@rollup/plugin-terser": "^0.4.4",
     "@rollup/plugin-typescript": "^12.1.0",
-    "@types/lodash": "^3.10.1",
+    "@types/lodash": "^3.10.9",
     "@types/screeps": "^3.3.8",
-    "screeps-api": "^1.16.1",
     "rollup": "^4.29.1",
     "rollup-plugin-clear": "^2.0.7",
     "rollup-plugin-copy": "^3.5.0",
     "rollup-plugin-screeps": "^1.0.1",
     "rollup-plugin-typescript2": "^0.36.0",
+    "screeps-api": "^1.16.1",
     "tslib": "^2.7.0",
     "typescript": "^5.6.3"
   },
   "dependencies": {
     "@rollup/plugin-alias": "^5.1.1",
     "chalk": "^5.4.1",
+    "git-rev-sync": "^3.0.2",
     "shelljs": "^0.8.5",
     "source-map": "^0.6.1",
-    "source-map-js": "^1.0.2",
-    "git-rev-sync": "^3.0.2"
+    "source-map-js": "^1.0.2"
   },
   "main": "rollup.config.js",
   "description": ""

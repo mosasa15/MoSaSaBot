@@ -8,26 +8,24 @@ import commonjs from '@rollup/plugin-commonjs';
 import typescript from '@rollup/plugin-typescript';
 import terser from '@rollup/plugin-terser'; // 压缩代码
 
-const secret = JSON.parse(fs.readFileSync('./.secret.json', 'utf-8'));
-const config = secret[process.env.DEST];
-
-const filePath = {
-    algo_wasm_priorityqueue: 'src/modules/utils/algo_wasm_priorityqueue.wasm'
+let config;
+try {
+    const secret = JSON.parse(fs.readFileSync('./.secret.json', 'utf-8'));
+    config = secret[process.env.DEST];
+} catch (e) {
+    // ignore if no secret
+    config = null;
 }
 
 // 根据指定的目标获取对应的配置项
 if (!process.env.DEST) console.log("未指定目标, 代码将被编译但不会上传")
-else if (!config) { throw new Error("无效目标，请检查 .secret.json 中是否包含对应配置") }
+else if (!config) { console.log("无效目标，请检查 .secret.json 中是否包含对应配置") }
 
 const runCopy = () => {
     return copy({
         targets: [
             {
                 src: 'dist/main.js',
-                dest: config.copyPath
-            },
-            {
-                src: filePath.algo_wasm_priorityqueue,
                 dest: config.copyPath
             },
             {
@@ -48,7 +46,7 @@ const pluginDeploy =
     config && screeps({ config, dayRun: !config });
 
 export default {
-    input: 'src/main.js',
+    input: 'src/main.ts',
     output: {
         file: 'dist/main.js',
         format: 'cjs',
@@ -64,18 +62,8 @@ export default {
         // 编译 ts
         typescript({ tsconfig: './tsconfig.json' }),
         // 压缩混淆代码
-		terser({ format: { comments: false, beautify: false }, mangle: true, compress: true }),
-        // 复制依赖文件
-        copy({
-            targets: [
-                {
-                    src: filePath.algo_wasm_priorityqueue,
-                    dest: 'dist'
-                }
-            ]
-        }),
+        terser({ format: { comments: false, beautify: false }, mangle: true, compress: true }),
         // 执行上传或者复制
         pluginDeploy
-    ],
-    external: [filePath.algo_wasm_priorityqueue]
+    ]
 };

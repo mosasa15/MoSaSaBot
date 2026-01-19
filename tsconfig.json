@@ -4,6 +4,8 @@
     "target": "es2017",
     "moduleResolution": "node",
     "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
     "allowJs": true,
     "checkJs": false,
     "baseUrl": ".",
