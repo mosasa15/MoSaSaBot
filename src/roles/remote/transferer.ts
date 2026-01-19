@@ -48,18 +48,30 @@ var roleNewtransferer = {
             }
         } else {
             // Fallback to Storage
-            var targets = creep.room.storage;
-            if (targets) {
-                if (creep.transfer(targets, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(targets, {visualizePathStyle: {stroke: '#ffffff'}});
-                }
-                if (creep.store[RESOURCE_ENERGY] === 0) {
-                    creep.memory.state = 'RETURN_TO_SOURCE';
+            var storage = creep.room.storage;
+            var terminal = creep.room.terminal;
+            
+            if (storage || terminal) {
+                const target = (storage && storage.store.getFreeCapacity(RESOURCE_ENERGY) > 0) ? storage : terminal;
+                if (target) {
+                    if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                        creep.moveTo(target, {visualizePathStyle: {stroke: '#ffffff'}});
+                    }
+                    if (creep.store[RESOURCE_ENERGY] === 0) {
+                        creep.memory.state = 'RETURN_TO_SOURCE';
+                    }
                 }
             } else {
-                // If no storage, maybe terminal or spawn/extension?
-                // For a transferer, usually storage is the hub.
-                // If nothing, idle.
+                // If no storage/terminal, drop near controller (as per user request)
+                const controller = creep.room.controller;
+                if (controller) {
+                    if (creep.pos.getRangeTo(controller) > 3) {
+                        creep.moveTo(controller, {visualizePathStyle: {stroke: '#ffffff'}});
+                    } else {
+                        creep.drop(RESOURCE_ENERGY);
+                        creep.memory.state = 'RETURN_TO_SOURCE';
+                    }
+                }
             }
         }
     },

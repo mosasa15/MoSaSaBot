@@ -233,9 +233,31 @@ export default {
      */
     processQueue: withCpuMonitor('SpawnManager.processQueue', function(room) {
         if (!Memory.rooms[room.name]) return;
-        const queue = Memory.rooms[room.name].spawnQueue; // 获取当前房间的生成队列
+        let queue = Memory.rooms[room.name].spawnQueue; // 获取当前房间的生成队列
 
         if (!queue || queue.length === 0) return; // 如果队列为空，则直接返回
+
+        // 1. 队列清理与验证 (修复坏死任务)
+        for (let i = queue.length - 1; i >= 0; i--) {
+            const task = queue[i];
+            if (!task || !task.role) {
+                queue.splice(i, 1);
+                continue;
+            }
+            // 重新计算无效的 body 或 cost
+            if (!task.body || task.body.length === 0 || !task.cost) {
+                // 尝试重新生成 body
+                const newBody = getAffordableBody(task.role, Math.max(room.energyAvailable, 300));
+                if (newBody && newBody.length > 0) {
+                    task.body = newBody;
+                    task.cost = calculateCost(newBody);
+                    console.log(`[SpawnManager] 修复了任务 ${task.role} 的 body/cost`);
+                } else {
+                    console.log(`[SpawnManager] 移除无效任务: ${task.role}`);
+                    queue.splice(i, 1);
+                }
+            }
+        }
 
         const spawns = room.find(FIND_MY_SPAWNS); // 查找所有空闲的 spawn
         if (spawns.length === 0) return; // 如果没有可用的 spawn，则直接返回

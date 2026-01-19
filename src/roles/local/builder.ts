@@ -121,10 +121,50 @@ var roleBuilder = {
             return;
         }
         
-        // Priority 5: Source (RCL 1-3)
+        // Priority 5: Source Logic (Smart Harvesting)
         const sources = creep.room.source || creep.room.find(FIND_SOURCES);
-        const source = sources[creep.memory.workLoc] || sources[0];
+        const sourceIndex = (creep.memory.workLoc || 0) % sources.length;
+        const source = sources[sourceIndex];
+        
         if (source) {
+            // 5.1 Try nearby Container
+            const sourceContainer = source.pos.findInRange(FIND_STRUCTURES, 2, {
+                filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
+            })[0];
+            if (sourceContainer) {
+                if (creep.withdraw(sourceContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(sourceContainer, { visualizePathStyle: { stroke: '#ffaa00' } });
+                }
+                return;
+            }
+
+            // 5.2 Try nearby Dropped Resources
+            const dropped = source.pos.findInRange(FIND_DROPPED_RESOURCES, 3, {
+                filter: r => r.resourceType === RESOURCE_ENERGY
+            })[0];
+            if (dropped) {
+                if (creep.pickup(dropped) === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(dropped, { visualizePathStyle: { stroke: '#ffaa00' } });
+                }
+                return;
+            }
+
+            // 5.3 Check for Harvester
+            const harvesters = source.pos.findInRange(FIND_MY_CREEPS, 2, {
+                filter: c => c.memory.role === 'harvester'
+            });
+            
+            if (harvesters.length > 0) {
+                // Harvester present, wait nearby but don't block
+                const harvester = harvesters[0];
+                if (creep.pos.getRangeTo(harvester) > 2) {
+                    creep.moveTo(harvester, { range: 2, visualizePathStyle: { stroke: '#5555ff', opacity: 0.5 } });
+                }
+                // Just wait, do not harvest
+                return;
+            }
+
+            // 5.4 Fallback: Direct Harvest (Only if no harvester)
             if (creep.harvest(source) === ERR_NOT_IN_RANGE) {  
                 creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });  
             }  

@@ -46,6 +46,26 @@ export const ROLE_CONFIGS = {
         },
         limit: room => {
             const sources = room.source || room.find(FIND_SOURCES);
+            
+            // Early Game (RCL 1): Allow multiple harvesters based on available spaces
+            if (room.controller && room.controller.level === 1) {
+                let totalSpaces = 0;
+                const terrain = room.getTerrain();
+                sources.forEach(source => {
+                    let spaces = 0;
+                    for (let x = source.pos.x - 1; x <= source.pos.x + 1; x++) {
+                        for (let y = source.pos.y - 1; y <= source.pos.y + 1; y++) {
+                            if (terrain.get(x, y) !== TERRAIN_MASK_WALL) {
+                                spaces++;
+                            }
+                        }
+                    }
+                    totalSpaces += Math.min(3, spaces); // Cap at 3 per source
+                });
+                return totalSpaces;
+            }
+
+            // Standard: 1 harvester per source
             return sources.length;
         },
         //limit: 0,
