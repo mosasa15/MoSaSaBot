@@ -107,13 +107,25 @@ const AutoPlanner = {
             if (s.structureType !== STRUCTURE_RAMPART) blockedPosSet.add(`${s.pos.x},${s.pos.y}`);
         }
         
-        // Priority Order
-        const priority = [
+        const corePriority = [
             'spawn', 'extension', 'tower', 'storage', 'container',
-            'road',
             'link', 'extractor', 'terminal', 'lab', 'factory',
-            'nuker', 'powerSpawn', 'observer', 'rampart', 'constructedWall'
+            'nuker', 'powerSpawn', 'observer'
         ];
+        const defensePriority = ['rampart', 'constructedWall'];
+        const allowRoad =
+            room.energyCapacityAvailable >= 550 &&
+            room.find(FIND_MY_CONSTRUCTION_SITES, {
+                filter: s =>
+                    s.structureType === STRUCTURE_SPAWN ||
+                    s.structureType === STRUCTURE_EXTENSION ||
+                    s.structureType === STRUCTURE_TOWER ||
+                    s.structureType === STRUCTURE_STORAGE ||
+                    s.structureType === STRUCTURE_CONTAINER
+            }).length === 0;
+        const roadBudget = allowRoad ? 5 : 0;
+        let roadsPlaced = 0;
+        const priority = [...corePriority, ...(allowRoad ? ['road'] : []), ...defensePriority];
         
         for (const type of priority) {
             if (!layout[type]) continue;
@@ -137,6 +149,7 @@ const AutoPlanner = {
             // Try to place more
             for (const pos of layout[type]) {
                 if (sitesPlaced >= maxSites) break;
+                if (type === 'road' && roadsPlaced >= roadBudget) break;
                 
                 const x = pos[0];
                 const y = pos[1];
@@ -154,6 +167,7 @@ const AutoPlanner = {
                 const result = room.createConstructionSite(x, y, type);
                 if (result === OK) {
                     sitesPlaced++;
+                    if (type === 'road') roadsPlaced++;
                     // console.log(`[AutoPlanner] Placed ${type} at ${x},${y} in ${room.name}`);
                 }
             }

@@ -121,6 +121,24 @@ export default {
             }
         }
 
+        const roomCounts = global.creepNum[room.name] || {};
+        if ((roomCounts.harvester || 0) === 0 && room.energyAvailable >= 200) {
+            tasks.push({
+                role: 'harvester',
+                priority: 100,
+                valid: true,
+                body: getAffordableBody('harvester', room.energyAvailable)
+            });
+        }
+        if ((roomCounts.upgrader || 0) === 0 && room.controller && room.controller.my && room.controller.level < 8 && room.energyAvailable >= 200) {
+            tasks.push({
+                role: 'upgrader',
+                priority: 90,
+                valid: true,
+                body: getAffordableBody('upgrader', room.energyAvailable)
+            });
+        }
+
         // 添加新增角色的任务
         if (Game.time % 1 === 0) {
             for (const [role, config] of Object.entries(ROLE_CONFIGS)) {
@@ -223,7 +241,7 @@ export default {
         const spawns = room.find(FIND_MY_SPAWNS); // 查找所有空闲的 spawn
         if (spawns.length === 0) return; // 如果没有可用的 spawn，则直接返回
 
-        const roomEnergy = room.energyAvailable;
+        let remainingEnergy = room.energyAvailable;
         //const roomEnergyCapacity = room.energyCapacityAvailable;
 
         //let processedCount = 0; // 记录已处理的任务数量
@@ -231,33 +249,43 @@ export default {
         const tier = global.cpuTier || 'normal';
         if (tier === 'low') parallelLimit = 1;
         else if (tier === 'high') parallelLimit = 5;
-        const maxSpawnsToUse = Math.min(spawns.length, Math.min(queue.length, parallelLimit)); // 计算最多使用的spawn数量，避免超过队列长度和spawn数量
+        const idleSpawns = spawns.filter(s => !s.spawning);
+        const maxSpawnsToUse = Math.min(idleSpawns.length, Math.min(queue.length, parallelLimit));
 
         //this.cleanupQueue(queue, roomEnergyCapacity);
         // 遍历队列并按顺序分配任务
-        //console.log(maxSpawnsToUse);
-        for (let i = 0; i < maxSpawnsToUse; i++) {
-            const task = queue[i]; // 获取当前任务（队列中的任务按优先级排列）
-            const spawn = spawns[i]; // 根据任务的索引选择对应的spawn（0号任务分配给0号spawn，1号任务分配给1号spawn，依此类推）
-            if (task.cost > roomEnergy) continue; // 如果任务所需能量大于当前房间可用能量，跳过该任务
-            if (spawn.spawning) continue;
-            
-            if (this.tryAssignTask(spawn, task) ) { // 尝试将任务分配给 spawn
-                //console.log(123);
-                queue.splice(i, 1); // 如果分配成功，从队列中移除该任务
-                //processedCount++; // 增加已处理的任务数量
+        for (let spawnIndex = 0; spawnIndex < maxSpawnsToUse; spawnIndex++) {
+            const spawn = idleSpawns[spawnIndex];
+            if (!spawn) continue;
+            for (let taskIndex = 0; taskIndex < queue.length; taskIndex++) {
+                const task = queue[taskIndex];
+                if (!task) continue;
+                let body = task.body;
+                let cost = task.cost;
+                if (cost > remainingEnergy) {
+                    body = getAffordableBody(task.role, remainingEnergy);
+                    if (!body || body.length === 0) continue;
+                    cost = calculateCost(body);
+                }
+                if (cost > remainingEnergy) continue;
+                if (this.tryAssignTask(spawn, task, body)) {
+                    remainingEnergy -= cost;
+                    queue.splice(taskIndex, 1);
+                    break;
+                }
             }
         }
         this.drawSpawnStatus(room); // 调用可视化绘制方法
     }),
 
-    tryAssignTask: withCpuMonitor('SpawnManager.tryAssignTask', function(spawn, task) {
+    tryAssignTask: withCpuMonitor('SpawnManager.tryAssignTask', function(spawn, task, bodyOverride) {
         const room = spawn.room;
         const role = task.role;
         
-        // 获取所有同类型爬虫的workLoc
-        const existingCreeps = _.filter(Game.creeps, creep => 
-            creep.memory.role === role && 
+        const existingCreeps = Object.values(Game.creeps).filter(creep =>
+            creep &&
+            creep.memory &&
+            creep.memory.role === role &&
             creep.memory.home === room.name
         );
         
@@ -284,7 +312,8 @@ export default {
         };
     
         const name = InsectNameManager.registerName(room);
-        const result = spawn.spawnCreep(task.body, name, {
+        const body = bodyOverride || task.body;
+        const result = spawn.spawnCreep(body, name, {
             memory: mergedMemory
         });
     
@@ -311,6 +340,43 @@ export default {
     drawSpawnStatus: withCpuMonitor('SpawnManager.drawSpawnStatus', function(room) {
         const spawns = room.find(FIND_MY_SPAWNS);
         const visual = new RoomVisual(room.name);
+        const queueLen = (Memory.rooms && Memory.rooms[room.name] && Memory.rooms[room.name].spawnQueue)
+            ? Memory.rooms[room.name].spawnQueue.length
+            : 0;
+        const tier = global.cpuTier || 'normal';
+        const mult = global.cpuMultiplier || 1;
+        const showQueue = !Memory.settings || Memory.settings.showSpawnQueue !== false;
+        const queue = (Memory.rooms && Memory.rooms[room.name] && Memory.rooms[room.name].spawnQueue)
+            ? Memory.rooms[room.name].spawnQueue
+            : [];
+        const anchor = spawns && spawns.length > 0 ? spawns[0].pos : null;
+        if (showQueue && anchor) {
+            const maxLines = 10;
+            const startX = Math.min(49, anchor.x + 1);
+            let y = Math.min(49, anchor.y + 1.6);
+            visual.text(
+                `Queue:${queueLen} E:${room.energyAvailable}/${room.energyCapacityAvailable} CPU:${tier}×${mult}`,
+                startX,
+                y,
+                { align: 'left', fontSize: 0.45, opacity: 0.75, color: '#ffffff' }
+            );
+            y += 0.55;
+            for (let i = 0; i < Math.min(maxLines, queue.length); i++) {
+                const t = queue[i];
+                const role = t && t.role ? t.role : 'unknown';
+                const prio = t && typeof t.priority === 'number' ? t.priority : 0;
+                const cost = t && typeof t.cost === 'number' ? t.cost : 0;
+                const ok = cost <= room.energyAvailable ? '✓' : '✗';
+                visual.text(
+                    `${i + 1}. ${role} p:${prio} c:${cost} ${ok}`,
+                    startX,
+                    y,
+                    { align: 'left', fontSize: 0.45, opacity: 0.7, color: ok === '✓' ? '#9cff9c' : '#ff9c9c' }
+                );
+                y += 0.5;
+                if (y > 49) break;
+            }
+        }
 
         for (const spawn of spawns) {
             if (spawn.spawning) {
@@ -342,6 +408,34 @@ export default {
                         color: '#6df46d'
                     }
                 );
+
+                if (queueLen > 0) {
+                    const task = Memory.rooms[room.name].spawnQueue[0];
+                    const cost = task ? task.cost : 0;
+                    visual.text(
+                        `Q:${queueLen} E:${room.energyAvailable}/${room.energyCapacityAvailable} C:${cost}`,
+                        spawn.pos.x + 1,
+                        spawn.pos.y + 0.85,
+                        {
+                            align: 'left',
+                            fontSize: 0.45,
+                            opacity: 0.7,
+                            color: '#cfd7ff'
+                        }
+                    );
+                } else {
+                    visual.text(
+                        `Q:0 CPU:${tier}×${mult}`,
+                        spawn.pos.x + 1,
+                        spawn.pos.y + 0.85,
+                        {
+                            align: 'left',
+                            fontSize: 0.45,
+                            opacity: 0.6,
+                            color: '#cfd7ff'
+                        }
+                    );
+                }
             }
         }
     }),
@@ -355,4 +449,24 @@ export default {
 function calculateCost(body) {
     if (!body) return 0;
     return body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
+}
+
+function getAffordableBody(role, energyAvailable) {
+    let pattern;
+    if (role === 'manager' || role === 'transferer' || role === 'Centraltransferer' || role === 'thinker') {
+        pattern = [CARRY, MOVE];
+    } else {
+        pattern = [WORK, CARRY, MOVE];
+    }
+    const maxParts = 50;
+    const costOf = (parts) => parts.reduce((sum, part) => sum + BODYPART_COST[part], 0);
+    const baseCost = costOf(pattern);
+    if (energyAvailable < baseCost) return [];
+    let body = [...pattern];
+    let cost = baseCost;
+    while (body.length + pattern.length <= maxParts && cost + baseCost <= energyAvailable) {
+        body = body.concat(pattern);
+        cost += baseCost;
+    }
+    return body;
 }

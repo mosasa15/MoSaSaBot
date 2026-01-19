@@ -29,19 +29,24 @@ var roleBuilder = {
                         return creep.pos.findClosestByRange(typed);
                     };
 
-                    const totalSites = constructionSites.length;
-                    const roadSites = constructionSites.filter(s => s.structureType === STRUCTURE_ROAD);
-                    const preferRoad = roadSites.length > 0 && (totalSites > 20 || creep.room.controller.level <= 3);
-
-                    if (preferRoad) {
-                        target = creep.pos.findClosestByRange(roadSites);
+                    const importantTypes = [
+                        STRUCTURE_SPAWN,
+                        STRUCTURE_EXTENSION,
+                        STRUCTURE_TOWER,
+                        STRUCTURE_STORAGE,
+                        STRUCTURE_CONTAINER,
+                        STRUCTURE_LINK,
+                        STRUCTURE_TERMINAL,
+                        STRUCTURE_LAB,
+                        STRUCTURE_FACTORY,
+                        STRUCTURE_POWER_SPAWN,
+                        STRUCTURE_OBSERVER,
+                        STRUCTURE_NUKER
+                    ];
+                    for (const t of importantTypes) {
+                        if (target) break;
+                        target = pickClosestOfType(t);
                     }
-
-                    if (!target) target = pickClosestOfType(STRUCTURE_SPAWN);
-                    if (!target) target = pickClosestOfType(STRUCTURE_EXTENSION);
-                    if (!target) target = pickClosestOfType(STRUCTURE_TOWER);
-                    if (!target) target = pickClosestOfType(STRUCTURE_STORAGE);
-                    if (!target) target = pickClosestOfType(STRUCTURE_CONTAINER);
                     if (!target) target = pickClosestOfType(STRUCTURE_ROAD);
                     if (!target) target = creep.pos.findClosestByRange(constructionSites);
 

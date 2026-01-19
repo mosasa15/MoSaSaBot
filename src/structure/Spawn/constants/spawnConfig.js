@@ -40,8 +40,14 @@ export const ROLE_CONFIGS = {
             { [WORK]: 12, [CARRY]: 1, [MOVE]: 6 }
         ),
         priority: 8,
-        condition: room => room.source,
-        limit: room => room.source.length,
+        condition: room => {
+            const sources = room.source || room.find(FIND_SOURCES);
+            return sources && sources.length > 0;
+        },
+        limit: room => {
+            const sources = room.source || room.find(FIND_SOURCES);
+            return sources.length;
+        },
         //limit: 0,
         memory: (room) => ({
             role: 'harvester',
@@ -95,7 +101,16 @@ export const ROLE_CONFIGS = {
             { [WORK]: 12, [CARRY]: 12, [MOVE]: 12 }
         ),
         priority: 7,
-        condition: room => room.controller.ticksToDowngrade < 100000,
+        condition: room => {
+            const controller = room.controller;
+            if (!controller || !controller.my) return false;
+            if (controller.level >= 8) return false;
+            if (controller.level <= 3) return true;
+            if (controller.ticksToDowngrade < 150000) return true;
+            const storageEnergy = room.storage ? (room.storage.store[RESOURCE_ENERGY] || 0) : 0;
+            const terminalEnergy = room.terminal ? (room.terminal.store[RESOURCE_ENERGY] || 0) : 0;
+            return storageEnergy + terminalEnergy >= 30000;
+        },
         limit: (room) => {
             const cpuMultiplier = global.cpuMultiplier || 1;
             const storedEnergy = room.storage ? (room.storage.store[RESOURCE_ENERGY] || 0) : 0;
@@ -295,11 +310,11 @@ export const ROLE_CONFIGS = {
         priority: 5,
         condition: room => {
             // 检查房间条件
-            if (!room.mineral || !room.terminal) return false;
+            const mineral = room.mineral || room.find(FIND_MINERALS)[0];
+            if (!mineral || !room.terminal) return false;
             
             // 检查 mineral 是否有资源
-            const mineral = room.mineral;
-            if (!mineral || mineral.mineralAmount === 0) return false;
+            if (mineral.mineralAmount === 0) return false;
             
             // 检查是否有 extractor
             const extractor = mineral.pos.lookFor(LOOK_STRUCTURES).find(
