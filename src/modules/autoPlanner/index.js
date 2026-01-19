@@ -1,8 +1,60 @@
-import Planner from './planner';
+import Planner from './planner63.js';
+
+const LAYOUT_SCHEMA_VERSION = 20260119;
+
+// Global cache for missing structures to avoid expensive calcs every tick
+const missingStructuresCache = {};
+// Cache for planned roads to allow quick adjacency checks
+const plannedRoadsCache = {};
+
+const structureShapes = {
+    "spawn": "◎",
+    "extension": "ⓔ",
+    "link": "◈",
+    "road": "•",
+    "constructedWall": "▓",
+    "rampart": "⊙",
+    "storage": "▤",
+    "tower": "🔫",
+    "observer": "👀",
+    "powerSpawn": "❂",
+    "extractor": "⇌",
+    "terminal": "✡",
+    "lab": "☢",
+    "container": "□",
+    "nuker": "▲",
+    "factory": "☭"
+};
+const structureColors = {
+    "spawn": "cyan",
+    "extension": "#0bb118",
+    "link": "yellow",
+    "road": "#fa6f6f",
+    "constructedWall": "#003fff",
+    "rampart": "#003fff",
+    "storage": "yellow",
+    "tower": "cyan",
+    "observer": "yellow",
+    "powerSpawn": "cyan",
+    "extractor": "cyan",
+    "terminal": "yellow",
+    "lab": "#d500ff",
+    "container": "yellow",
+    "nuker": "cyan",
+    "factory": "yellow"
+};
 
 const AutoPlanner = {
     run: function(room) {
         if (!room || !room.controller || !room.controller.my) return;
+
+        if (room.memory.layoutVersion !== LAYOUT_SCHEMA_VERSION) {
+            delete room.memory.layout;
+            room.memory.layoutVersion = LAYOUT_SCHEMA_VERSION;
+            delete missingStructuresCache[room.name];
+            delete plannedRoadsCache[room.name];
+            if (global.layoutCache) delete global.layoutCache[room.name];
+        }
         
         // Initialize Memory
         if (!room.memory.layout) {
@@ -24,8 +76,8 @@ const AutoPlanner = {
             this.manageConstruction(room);
         }
         
-        // Visualization (Optional, consume CPU)
-        // if (Game.time % 10 === 0) this.visualize(room);
+        // Visualization
+        this.visualize(room);
     },
     
     manageConstruction: function(room) {
@@ -92,19 +144,89 @@ const AutoPlanner = {
     },
     
     visualize: function(room) {
-        const layout = room.memory.layout;
-        if (!layout) return;
+        if (!room.memory.layout) return;
+        
+        // Update cache every 20 ticks
+        if (!missingStructuresCache[room.name] || Game.time % 20 === 0) {
+            this.updateMissingStructuresCache(room);
+        }
+        
+        const missing = missingStructuresCache[room.name];
+        if (!missing || missing.length === 0) return;
         
         const visual = new RoomVisual(room.name);
-        for (const type in layout) {
-            const color = type === 'road' ? '#555' : 
-                          type === 'extension' ? '#e8e835' : 
-                          type === 'spawn' ? '#ff0000' : '#fff';
-            
-            for (const pos of layout[type]) {
-                visual.circle(pos[0], pos[1], { radius: 0.2, fill: color, opacity: 0.5 });
+        const plannedRoads = plannedRoadsCache[room.name] || new Set();
+
+        for (const item of missing) {
+            if (item.type === 'road') {
+                // Draw circle (node) - smaller as requested
+                visual.circle(item.x, item.y, {
+                    radius: 0.1,
+                    fill: structureColors[item.type],
+                    opacity: 0.2
+                });
+
+                // Draw lines to neighbors that are also planned roads
+                // This connects the missing road to the rest of the planned network (built or unbuilt)
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        if (dx === 0 && dy === 0) continue;
+                        
+                        const nx = item.x + dx;
+                        const ny = item.y + dy;
+                        
+                        // Check if neighbor is a planned road
+                        if (plannedRoads.has(`${nx},${ny}`)) {
+                            visual.line(item.x, item.y, nx, ny, {
+                                color: structureColors[item.type],
+                                opacity: 0.2,
+                                width: 0.1
+                            });
+                        }
+                    }
+                }
+            } else {
+                visual.text(structureShapes[item.type] || '?', item.x, item.y + 0.2, {
+                    color: structureColors[item.type],
+                    opacity: 0.3, // Low opacity as requested
+                    font: 0.5
+                });
             }
         }
+    },
+
+    updateMissingStructuresCache: function(room) {
+        const layout = room.memory.layout;
+        const structures = room.find(FIND_STRUCTURES);
+        const constructionSites = room.find(FIND_CONSTRUCTION_SITES);
+        
+        // Build a map of existing things
+        const existingMap = new Set();
+        const addToMap = (s) => existingMap.add(`${s.pos.x},${s.pos.y},${s.structureType}`);
+        
+        structures.forEach(addToMap);
+        constructionSites.forEach(addToMap);
+        
+        // Build planned roads cache for this room
+        const roadSet = new Set();
+        if (layout.road) {
+            for (const pos of layout.road) {
+                roadSet.add(`${pos[0]},${pos[1]}`);
+            }
+        }
+        plannedRoadsCache[room.name] = roadSet;
+
+        const missing = [];
+        for (const type in layout) {
+            for (const pos of layout[type]) {
+                const x = pos[0];
+                const y = pos[1];
+                if (!existingMap.has(`${x},${y},${type}`)) {
+                    missing.push({x, y, type});
+                }
+            }
+        }
+        missingStructuresCache[room.name] = missing;
     }
 };
 
