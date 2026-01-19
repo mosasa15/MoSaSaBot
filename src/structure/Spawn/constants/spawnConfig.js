@@ -197,12 +197,20 @@ export const ROLE_CONFIGS = {
             { [CARRY]: 32, [MOVE]: 16 }
         ),
         priority: 9,
-        condition: room => room.storage,
+        condition: room => {
+            if (room.storage) return true;
+            const tasks = Memory.rooms && Memory.rooms[room.name] && Memory.rooms[room.name].tasks
+                ? Memory.rooms[room.name].tasks
+                : [];
+            return tasks.some(t => t.type === 'fillExtension');
+        },
         limit: (room) => {
             const cpuMultiplier = global.cpuMultiplier || 1;
             const siteCount = room.find(FIND_MY_CONSTRUCTION_SITES).length;
-            const base = room.storage ? 1 : 0;
-            if (base === 0) return 0;
+            const tasks = Memory.rooms && Memory.rooms[room.name] && Memory.rooms[room.name].tasks
+                ? Memory.rooms[room.name].tasks
+                : [];
+            if (!room.storage) return tasks.some(t => t.type === 'fillExtension') ? 1 : 0;
             if (siteCount >= 20) return Math.min(3, Math.max(1, Math.ceil(cpuMultiplier)));
             return 1;
         },

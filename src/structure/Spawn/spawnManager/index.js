@@ -62,7 +62,6 @@ export default {
             !tasksList.some(task => task.type === 'fillExtension')) {
             tasksList.push({ type: 'fillExtension' });
             // console.log(`房间 ${room.name} 能量不足，已推送 fillExtension 任务。`);
-            return;
         }
 
         const tasks = this.generateTasks(room);
