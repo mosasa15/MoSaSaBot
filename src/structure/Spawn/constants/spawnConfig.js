@@ -1,0 +1,296 @@
+// modules/constants/spawnConfig.js
+
+/**
+ * 队列配置常量：每个房间同时处理的最大生成任务数
+ */
+export const QUEUE_CONFIG = {
+    MAX_PARALLEL_TASKS: 3  // 基于房间内spawn数量的并行任务上限
+};
+
+/**
+ * 不同角色在 1 - 8 级时对应的身体部件配置
+ * spawn 在孵化时会根据所处房间的可用能量自动调整身体部件
+ */
+const getBodyConfig = function(...bodySets) {
+    let config = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [], 7: [], 8: [] };
+    
+    // 遍历空配置项，用传入的 bodySet 依次生成配置项
+    Object.keys(config).forEach((level, index) => {
+        config[level] = calcBodyPart(bodySets[index]);
+    });
+
+    return config;
+};
+
+/**
+ * 角色配置中心
+ * 每个角色的身体部件根据等级线性增加
+ */
+export const ROLE_CONFIGS = {
+    // 采集者 - 专注于能量采集
+    harvester: {
+        body: getBodyConfig(
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 },
+            { [WORK]: 4, [CARRY]: 1, [MOVE]: 2 },
+            { [WORK]: 6, [CARRY]: 1, [MOVE]: 3 },
+            { [WORK]: 8, [CARRY]: 1, [MOVE]: 4 },
+            { [WORK]: 10, [CARRY]: 1, [MOVE]: 5 },
+            { [WORK]: 12, [CARRY]: 1, [MOVE]: 6 },
+            { [WORK]: 12, [CARRY]: 1, [MOVE]: 6 },
+            { [WORK]: 12, [CARRY]: 1, [MOVE]: 6 }
+        ),
+        priority: 8,
+        condition: room => room.source,
+        limit: room => room.source.length,
+        //limit: 0,
+        memory: (room) => ({
+            role: 'harvester',
+            // sourceId: null,       // 由生成逻辑动态分配
+            // containerId: null,     // 关联的容器ID
+            // state: 'harvesting'    // 工作状态：harvesting/transferring
+        })
+    },
+    wallRepairer: {
+        body: getBodyConfig(
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 },
+            { [WORK]: 4, [CARRY]: 1, [MOVE]: 2 },
+            { [WORK]: 6, [CARRY]: 1, [MOVE]: 3 },
+            { [WORK]: 8, [CARRY]: 1, [MOVE]: 4 },
+            { [WORK]: 10, [CARRY]: 1, [MOVE]: 5 },
+            { [WORK]: 10, [CARRY]: 6, [MOVE]: 10 },
+            { [WORK]: 34, [CARRY]: 6, [MOVE]: 10 },
+            { [WORK]: 34, [CARRY]: 6, [MOVE]: 10 }
+        ),
+        priority: 3,
+        condition: (room) => {
+            // 检查控制器等级
+            if (room.controller.level < 7) return false;
+            
+            // 检查能量储备
+            const storage = room.storage;
+            const terminal = room.terminal;
+            const totalEnergy = (storage ? storage.store[RESOURCE_ENERGY] : 0) + 
+                                (terminal ? terminal.store[RESOURCE_ENERGY] : 0);
+            return totalEnergy > 300000;
+        },
+        limit: 1,
+        memory: (room) => ({
+            role: 'wallRepairer',
+            // sourceId: null,       // 由生成逻辑动态分配
+            // containerId: null,     // 关联的容器ID
+            // state: 'harvesting'    // 工作状态：harvesting/transferring
+        })
+    },
+// ... existing code ...
+    // 升级者 - 专注于控制器升级
+    upgrader: {
+        body: getBodyConfig(
+            { [WORK]: 1, [CARRY]: 1, [MOVE]: 1 },
+            { [WORK]: 2, [CARRY]: 2, [MOVE]: 2 },
+            { [WORK]: 3, [CARRY]: 3, [MOVE]: 3 },
+            { [WORK]: 4, [CARRY]: 4, [MOVE]: 4 },
+            { [WORK]: 6, [CARRY]: 6, [MOVE]: 6 },
+            { [WORK]: 9, [CARRY]: 9, [MOVE]: 9 },
+            { [WORK]: 17, [CARRY]: 9, [MOVE]: 17 },
+            { [WORK]: 12, [CARRY]: 12, [MOVE]: 12 }
+        ),
+        priority: 7,
+        condition: room => room.controller.ticksToDowngrade < 100000,
+        limit: 1,
+        memory: (room) => ({
+            role: 'upgrader',
+            // controllerId: room.controller.id, // 绑定房间控制器
+            // sourceId: room.storage?.id || null, // 能量来源
+            // state: 'upgrading'               // 工作状态：collecting/upgrading
+        })
+    },
+
+    // 防御者 - 动态应对威胁
+    defenser: {
+        body: getBodyConfig(
+            { [MOVE]: 1, [ATTACK]: 1 },
+            { [MOVE]: 2, [ATTACK]: 2 },
+            { [MOVE]: 3, [ATTACK]: 3 },
+            { [MOVE]: 4, [ATTACK]: 4 },
+            { [MOVE]: 5, [ATTACK]: 5 },
+            { [MOVE]: 6, [ATTACK]: 6 },
+            { [ATTACK]: 40, [MOVE]: 10 },
+            { [RANGED_ATTACK]: 40, [MOVE]: 10}
+        ),
+        priority: 9,
+        condition: room => room.find(FIND_HOSTILE_CREEPS, {
+            filter: creep =>  creep.owner.username !== 'Invader'
+        }).length > 0,
+        limit: 0,
+        memory: (room) => ({
+            role: 'defenser',
+            // patrolRoute: [],       // 巡逻路径坐标数组
+            // combatMode: 'patrol', // 战斗模式：patrol/attack
+            // targetId: null        // 当前攻击目标
+        })
+    },
+
+    // 建造者 - 建筑单位
+    builder: {
+        body: getBodyConfig(
+            { [WORK]: 1, [CARRY]: 1, [MOVE]: 1 },
+            { [WORK]: 2, [CARRY]: 2, [MOVE]: 2 },
+            { [WORK]: 3, [CARRY]: 3, [MOVE]: 3 },
+            { [WORK]: 4, [CARRY]: 4, [MOVE]: 4 },
+            { [WORK]: 6, [CARRY]: 6, [MOVE]: 6 },
+            { [WORK]: 7, [CARRY]: 7, [MOVE]: 7 },
+            { [WORK]: 12, [CARRY]: 6, [MOVE]: 9 },
+            { [WORK]: 20, [CARRY]: 8, [MOVE]: 14 }
+        ),
+        priority: 6,
+        condition: room => room.find(FIND_CONSTRUCTION_SITES).length > 0,
+        limit: 1,
+        memory: (room) => ({
+            role: 'builder',
+            // constructionSiteId: null, // 当前建造目标
+            // energySource: room.storage?.id || null // 能量来源
+        })
+    },
+
+    // 资源管理者 - 仓储运输
+    manager: {
+        body: getBodyConfig(
+            { [CARRY]: 2, [MOVE]: 1 },
+            { [CARRY]: 3, [MOVE]: 2 },
+            { [CARRY]: 4, [MOVE]: 2 },
+            { [CARRY]: 5, [MOVE]: 3 },
+            { [CARRY]: 8, [MOVE]: 4 },
+            { [CARRY]: 14, [MOVE]: 7 },
+            { [CARRY]: 20, [MOVE]: 10 },
+            { [CARRY]: 32, [MOVE]: 16 }
+        ),
+        priority: 9,
+        condition: room => room.storage,
+        limit: 1,
+        memory: (room) => ({
+            role: 'manager',
+            // sourceId: room.storage.id,      // 固定从仓库获取
+            // targetId: null,                // 动态分配运输目标
+            // resourceType: RESOURCE_ENERGY, // 默认运输能量
+            // task: 'balance'                // 任务类型：balance/feedTower
+        })
+    },
+
+    // 实验室管理员 - 处理化合物
+    thinker: {
+        body: getBodyConfig(
+            { [CARRY]: 2, [MOVE]: 1 },
+            { [CARRY]: 3, [MOVE]: 2 },
+            { [CARRY]: 4, [MOVE]: 2 },
+            { [CARRY]: 5, [MOVE]: 3 },
+            { [CARRY]: 8, [MOVE]: 4 },
+            { [CARRY]: 14, [MOVE]: 7 },
+            { [CARRY]: 20, [MOVE]: 10 },
+            { [CARRY]: 32, [MOVE]: 16 }
+        ),
+        priority: 9,
+        condition: room => room.lab && room.find(FIND_HOSTILE_CREEPS).length > 0,
+        limit: 0,
+        memory: (room) => ({
+            role: 'thinker',
+            // labId: room.find(FIND_MY_STRUCTURES, { 
+            //     filter: s => s.structureType === STRUCTURE_LAB 
+            // })[0]?.id || null,
+            // reactionType: null    // 当前处理的化合物类型
+        })
+    },
+
+    // 应急单位 - 紧急能源供应
+    emergency: {
+        body: getBodyConfig(
+            { [WORK]: 1,[CARRY]: 2, [MOVE]: 2 },
+            { [WORK]: 2,[CARRY]: 2, [MOVE]: 2 },
+            { [WORK]: 1,[CARRY]: 2, [MOVE]: 2 },
+            { [WORK]: 1,[CARRY]: 2, [MOVE]: 2 },
+            { [WORK]: 1,[CARRY]: 2, [MOVE]: 2 },
+            { [WORK]: 1,[CARRY]: 2, [MOVE]: 2 },
+            { [WORK]: 1,[CARRY]: 2, [MOVE]: 2 },
+            { [WORK]: 1,[CARRY]: 2, [MOVE]: 2 }
+        ),
+        priority: 9,
+        condition: room => room.storage && 
+                        room.energyAvailable < 1000 && 
+                        room.find(FIND_MY_CREEPS, {
+                            filter: creep => creep.memory.role === 'manager'
+                        }).length === 0,
+        limit: 0,
+        memory: (room) => ({
+            role: 'emergency',
+            //sourceId: room.storage.id,      // 应急能源来源
+            //targetId: room.spawns[0]?.id,  // 优先供应spawn
+            //critical: true                // 紧急任务标志
+        })
+    },
+
+    // 中央运输者 - 仓储与终端间运输
+    Centraltransferer: {
+        body: getBodyConfig(
+            { [CARRY]: 2, [MOVE]: 1 },
+            { [CARRY]: 3, [MOVE]: 2 },
+            { [CARRY]: 4, [MOVE]: 2 },
+            { [CARRY]: 5, [MOVE]: 3 },
+            { [CARRY]: 8, [MOVE]: 4 },
+            { [CARRY]: 29, [MOVE]: 1 },
+            { [CARRY]: 39, [MOVE]: 1 },
+            { [CARRY]: 49, [MOVE]: 1 }
+        ),
+        priority: 8,
+        condition: room => room.storage && room.terminal,
+        limit: 1,
+        memory: (room) => ({
+            role: 'Centraltransferer',
+            //sourceId: room.storage.id,      // 固定来源
+            //targetId: room.terminal.id,    // 固定目标
+            //resourceType: null,            // 根据指令动态调整
+            //amount: 1000                   // 单次运输量
+        })
+    },
+
+    // 矿工 - 开采 mineral
+    miner: {
+        body: getBodyConfig(
+            { [WORK]: 1, [CARRY]: 1, [MOVE]: 1 },
+            { [WORK]: 2, [CARRY]: 2, [MOVE]: 2 },
+            { [WORK]: 3, [CARRY]: 3, [MOVE]: 3 },
+            { [WORK]: 4, [CARRY]: 4, [MOVE]: 4 },
+            { [WORK]: 5, [CARRY]: 5, [MOVE]: 5 },
+            { [WORK]: 10, [CARRY]: 10, [MOVE]: 10 },
+            { [WORK]: 15, [CARRY]: 10, [MOVE]: 13 },
+            { [WORK]: 20, [CARRY]: 10, [MOVE]: 15 }
+        ),
+        priority: 5,
+        condition: room => {
+            // 检查房间条件
+            if (!room.mineral || !room.terminal) return false;
+            
+            // 检查 mineral 是否有资源
+            const mineral = room.mineral;
+            if (!mineral || mineral.mineralAmount === 0) return false;
+            
+            // 检查是否有 extractor
+            const extractor = mineral.pos.lookFor(LOOK_STRUCTURES).find(
+                structure => structure.structureType === STRUCTURE_EXTRACTOR
+            );
+            return extractor !== undefined;
+        },
+        limit: 0,
+        memory: (room) => ({
+            role: 'miner',
+            //harvesting: true
+        })
+    },
+};
+
+// 计算身体部件（保持不变）
+function calcBodyPart(partsConfig) {
+    let totalParts = [];
+    for (let part in partsConfig) {
+        totalParts.push(...Array(partsConfig[part]).fill(part));
+    }
+    return totalParts;
+}

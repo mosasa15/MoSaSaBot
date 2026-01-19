@@ -1,0 +1,76 @@
+import clear from 'rollup-plugin-clear';
+//import screeps from 'rollup-plugin-screeps';
+import screeps from './plugins/rollup-plugin-screeps.js';
+import copy from 'rollup-plugin-copy';
+import fs from 'fs';
+import path from 'path';
+import resolve from '@rollup/plugin-node-resolve';
+import commonjs from '@rollup/plugin-commonjs';
+import alias from '@rollup/plugin-alias';
+import { fileURLToPath } from 'url';
+
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const secret = JSON.parse(fs.readFileSync('./.secret.json', 'utf-8'));
+const config = secret[process.env.DEST];
+
+// 根据指定的目标获取对应的配置项
+if (!process.env.DEST) console.log("未指定目标, 代码将被编译但不会上传")
+else if (!config) { throw new Error("无效目标，请检查 secret.json 中是否包含对应配置") }
+
+const runCopy = () => {
+    return copy({
+        targets: [
+            {
+                src: 'dist/main.js',
+                dest: config.copyPath
+            },
+            {
+                src: 'dist/main.js.map',
+                dest: config.copyPath,
+                rename: name => name + '.map.js',
+                transform: contents => `module.exports = ${contents.toString()};`
+            }
+        ],
+        hook: 'writeBundle',
+        verbose: true
+    })
+}
+
+// 根据指定的配置决定是上传还是复制到文件夹
+const pluginDeploy = 
+        config && config.copyPath ?
+        // 复制到指定路径
+        runCopy() : 
+        config && config.token ?
+        // 上传到screeps
+        screeps({ config, dayRun: !config }) :
+        '';
+
+export default {
+    input: 'src/main.js',
+    output: {
+        file: 'dist/main.js',
+        format: 'cjs',
+        sourcemap: true,
+    },
+    plugins: [
+        // 清除上次编译成果
+        clear({ targets: ["dist"] }),
+        // 打包依赖
+        resolve(),
+        // 模块化依赖
+        commonjs(),
+        // 路径别名
+        alias({
+            entries: [{
+                find: '@',
+                replacement: path.resolve(__dirname, 'src')
+            }]
+        }),
+        // 执行上传或者复制
+        pluginDeploy
+    ]
+};
