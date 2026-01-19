@@ -32,33 +32,40 @@ var AutoRoom = {
              // console.log(`[AutoRoom] ${roomName} Low energy, pushed fillExtension task.`);
         }
         
-        // Generate Role Configs Dynamically
-        const roleConfigs = getRoleConfigs(room);
-        
-        // Spawn Logic
-        for (let spawn of spawns) {
-            if (spawn.spawning) continue;
-            
-            for (let config of roleConfigs) {
-                // Iterate through work locations (e.g. source indices)
-                for (let workLoc of config.workLoc) {
-                    if (checkCreepLimit(config.role, config.sourceRoom, config.targetRoom, workLoc, config.maxNumber)) {
-                        
-                        // Body Selection Logic
-                        let bodyRole = config.role;
-                        const body = BodyGenerator.generate(room.energyAvailable, bodyRole);
-                        
-                        // Attempt Spawn
-                        try {
-                            spawnCreep(spawn, config.role, config.sourceRoom, config.targetRoom, workLoc, body);
-                        } catch (e) {
-                            console.log(`[AutoRoom] Spawn Error in ${roomName}: ${e}`);
+        if (Memory.settings && Memory.settings.useAutoRoomSpawn === true) {
+            const roleConfigs = getRoleConfigs(room);
+            for (let spawn of spawns) {
+                if (spawn.spawning) continue;
+
+                for (let config of roleConfigs) {
+                    for (let workLoc of config.workLoc) {
+                        if (checkCreepLimit(config.role, config.sourceRoom, config.targetRoom, workLoc, config.maxNumber)) {
+                            let bodyRole = config.role;
+                            const energyCap = room.energyCapacityAvailable || room.energyAvailable;
+                            const rcl = room.controller.level;
+                            let energyBudget = room.energyAvailable;
+                            if (bodyRole === 'builder') {
+                                energyBudget = Math.min(energyCap, 300 + rcl * 200);
+                            } else if (bodyRole === 'upgrader') {
+                                energyBudget = Math.min(energyCap, 300 + rcl * 150);
+                            } else if (bodyRole === 'harvester') {
+                                energyBudget = Math.min(energyCap, 300 + rcl * 150);
+                            } else if (bodyRole === 'manager') {
+                                energyBudget = Math.min(energyCap, 450 + rcl * 150);
+                            }
+                            const body = BodyGenerator.generate(energyBudget, bodyRole);
+
+                            try {
+                                spawnCreep(spawn, config.role, config.sourceRoom, config.targetRoom, workLoc, body);
+                            } catch (e) {
+                                console.log(`[AutoRoom] Spawn Error in ${roomName}: ${e}`);
+                            }
+
+                            if (spawn.spawning) break;
                         }
-                        
-                        if (spawn.spawning) break; // Busy now
                     }
+                    if (spawn.spawning) break;
                 }
-                if (spawn.spawning) break;
             }
         }
     }
@@ -70,7 +77,18 @@ function getRoleConfigs(room) {
     const sourceLocs = sources.map((_, i) => i);
     
     // Determine dynamic limits
-    const hasConstruction = room.find(FIND_CONSTRUCTION_SITES).length > 0;
+    const siteCount = room.find(FIND_MY_CONSTRUCTION_SITES).length;
+    const hasConstruction = siteCount > 0;
+    const energyCapacity = room.energyCapacityAvailable || 0;
+    const storedEnergy = room.storage ? (room.storage.store[RESOURCE_ENERGY] || 0) : 0;
+    const buildScale = hasConstruction ? Math.ceil(siteCount / 10) : 0;
+    const maxBuilders = Math.min(
+        room.controller.level <= 3 ? 2 : 4,
+        Math.max(0, buildScale)
+    );
+    const builderLimit = hasConstruction
+        ? Math.min(maxBuilders, energyCapacity >= 550 || storedEnergy >= 5000 ? maxBuilders : 1)
+        : 0;
     
     // Config Structure
     // Priority: Higher is more important
@@ -85,7 +103,7 @@ function getRoleConfigs(room) {
         { role: 'upgrader',         sourceRoom: roomName, targetRoom: roomName, workLoc: [0],     maxNumber: 1, priority: 7}, 
         
         // Building
-        { role: 'builder',          sourceRoom: roomName, targetRoom: roomName, workLoc: [0],     maxNumber: hasConstruction ? 1 : 0, priority: 6},
+        { role: 'builder',          sourceRoom: roomName, targetRoom: roomName, workLoc: [0],     maxNumber: builderLimit, priority: 6},
         
         // Transferer (if needed, usually for link/storage ops)
         { role: 'transferer',       sourceRoom: roomName, targetRoom: roomName, workLoc: [0],     maxNumber: 0, priority: 9}, 

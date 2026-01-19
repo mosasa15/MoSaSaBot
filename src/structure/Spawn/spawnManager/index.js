@@ -1,5 +1,6 @@
 import InsectNameManager from '@/module/creepNameManager';
 import { QUEUE_CONFIG, ROLE_CONFIGS } from '@/structure/Spawn/constants/spawnConfig';  // 引入常量配置
+import { getCpuMultiplier, getCpuTier } from '@/utils/cpuPolicy.js';
 
 // CPU监控工具函数
 const DEBUG_MODE = true; // 通过 Memory 或全局变量控制
@@ -24,6 +25,15 @@ export default {
      * 主运行函数 - 遍历所有房间并处理生成逻辑
      */
     run: withCpuMonitor('SpawnManager.run', function() {
+        const tier = getCpuTier();
+        const multiplier = getCpuMultiplier();
+        if (!global.cpuTierState) global.cpuTierState = { tier, lowStreak: 0 };
+        if (tier === 'low') global.cpuTierState.lowStreak = Math.min(20, (global.cpuTierState.lowStreak || 0) + 1);
+        else global.cpuTierState.lowStreak = 0;
+        global.cpuTierState.tier = global.cpuTierState.lowStreak >= 5 ? 'low' : tier;
+
+        global.cpuTier = global.cpuTierState.tier;
+        global.cpuMultiplier = global.cpuTier === 'low' ? 0.5 : multiplier;
         for (const roomName in Game.rooms) {
             const room = Game.rooms[roomName];
             if( !room.controller || !room.controller.my ) continue;
@@ -88,8 +98,11 @@ export default {
                 const creep = Game.creeps[creepName];
                 if (!creep) continue;
                 
-                const { role, home } = creep.memory;
+                const role = creep.memory.role;
+                let home = creep.memory.home;
+                if (!home) home = creep.memory.sourceRoomName || creep.memory.targetRoomName;
                 if (!role || !home) continue;
+                if (!creep.memory.home) creep.memory.home = home;
                 // 确保房间记录存在
                 if (!global.creepNum[home]) {
                     global.creepNum[home] = {};
@@ -214,7 +227,11 @@ export default {
         //const roomEnergyCapacity = room.energyCapacityAvailable;
 
         //let processedCount = 0; // 记录已处理的任务数量
-        const maxSpawnsToUse = Math.min(spawns.length, Math.min(queue.length, QUEUE_CONFIG.MAX_PARALLEL_TASKS)); // 计算最多使用的spawn数量，避免超过队列长度和spawn数量
+        let parallelLimit = QUEUE_CONFIG.MAX_PARALLEL_TASKS;
+        const tier = global.cpuTier || 'normal';
+        if (tier === 'low') parallelLimit = 1;
+        else if (tier === 'high') parallelLimit = 5;
+        const maxSpawnsToUse = Math.min(spawns.length, Math.min(queue.length, parallelLimit)); // 计算最多使用的spawn数量，避免超过队列长度和spawn数量
 
         //this.cleanupQueue(queue, roomEnergyCapacity);
         // 遍历队列并按顺序分配任务

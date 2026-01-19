@@ -96,7 +96,12 @@ export const ROLE_CONFIGS = {
         ),
         priority: 7,
         condition: room => room.controller.ticksToDowngrade < 100000,
-        limit: 1,
+        limit: (room) => {
+            const cpuMultiplier = global.cpuMultiplier || 1;
+            const storedEnergy = room.storage ? (room.storage.store[RESOURCE_ENERGY] || 0) : 0;
+            if (storedEnergy < 20000) return 1;
+            return Math.min(3, Math.max(1, Math.ceil(cpuMultiplier)));
+        },
         memory: (room) => ({
             role: 'upgrader',
             // controllerId: room.controller.id, // 绑定房间控制器
@@ -144,7 +149,19 @@ export const ROLE_CONFIGS = {
         ),
         priority: 6,
         condition: room => room.find(FIND_CONSTRUCTION_SITES).length > 0,
-        limit: 1,
+        limit: (room) => {
+            const siteCount = room.find(FIND_MY_CONSTRUCTION_SITES).length;
+            if (siteCount <= 0) return 0;
+            const rcl = room.controller.level;
+            const energyCap = room.energyCapacityAvailable || 0;
+            const storedEnergy = room.storage ? (room.storage.store[RESOURCE_ENERGY] || 0) : 0;
+            const scale = Math.ceil(siteCount / 10);
+            const maxBuilders = rcl <= 3 ? 2 : 6;
+            const cpuMultiplier = global.cpuMultiplier || 1;
+            let limit = Math.min(maxBuilders, Math.max(1, Math.ceil(scale * cpuMultiplier)));
+            if (energyCap < 550 && storedEnergy < 5000) limit = 1;
+            return limit;
+        },
         memory: (room) => ({
             role: 'builder',
             // constructionSiteId: null, // 当前建造目标
@@ -166,7 +183,14 @@ export const ROLE_CONFIGS = {
         ),
         priority: 9,
         condition: room => room.storage,
-        limit: 1,
+        limit: (room) => {
+            const cpuMultiplier = global.cpuMultiplier || 1;
+            const siteCount = room.find(FIND_MY_CONSTRUCTION_SITES).length;
+            const base = room.storage ? 1 : 0;
+            if (base === 0) return 0;
+            if (siteCount >= 20) return Math.min(3, Math.max(1, Math.ceil(cpuMultiplier)));
+            return 1;
+        },
         memory: (room) => ({
             role: 'manager',
             // sourceId: room.storage.id,      // 固定从仓库获取
@@ -241,7 +265,12 @@ export const ROLE_CONFIGS = {
         ),
         priority: 8,
         condition: room => room.storage && room.terminal,
-        limit: 1,
+        limit: (room) => {
+            const cpuMultiplier = global.cpuMultiplier || 1;
+            const storedEnergy = room.storage ? (room.storage.store[RESOURCE_ENERGY] || 0) : 0;
+            if (storedEnergy < 50000) return 1;
+            return Math.min(3, Math.max(1, Math.ceil(cpuMultiplier)));
+        },
         memory: (room) => ({
             role: 'Centraltransferer',
             //sourceId: room.storage.id,      // 固定来源

@@ -71,8 +71,8 @@ const AutoPlanner = {
             }
         }
         
-        // Manage Construction Sites (every 100 ticks)
-        if (Game.time % 100 === 0) {
+        // Manage Construction Sites (every 10 ticks)
+        if (Game.time % 10 === 0) {
             this.manageConstruction(room);
         }
         
@@ -85,16 +85,34 @@ const AutoPlanner = {
         if (!layout) return;
         
         const rcl = room.controller.level;
-        const maxSites = 5; // Don't spam too many sites at once
+        const bucket = Game.cpu && typeof Game.cpu.bucket === 'number' ? Game.cpu.bucket : 10000;
+        const maxSites = Math.min(
+            bucket < 2000 ? 10 : 80,
+            Math.max(10, rcl * 10 + 10)
+        );
         let sitesPlaced = room.find(FIND_MY_CONSTRUCTION_SITES).length;
         
         if (sitesPlaced >= maxSites) return;
+
+        const structures = room.find(FIND_STRUCTURES);
+        const constructionSites = room.find(FIND_MY_CONSTRUCTION_SITES);
+        const existingTypeSet = new Set();
+        const blockedPosSet = new Set();
+        for (const s of structures) {
+            existingTypeSet.add(`${s.pos.x},${s.pos.y},${s.structureType}`);
+            if (s.structureType !== STRUCTURE_RAMPART) blockedPosSet.add(`${s.pos.x},${s.pos.y}`);
+        }
+        for (const s of constructionSites) {
+            existingTypeSet.add(`${s.pos.x},${s.pos.y},${s.structureType}`);
+            if (s.structureType !== STRUCTURE_RAMPART) blockedPosSet.add(`${s.pos.x},${s.pos.y}`);
+        }
         
         // Priority Order
         const priority = [
-            'spawn', 'extension', 'tower', 'storage', 'container', 
+            'spawn', 'extension', 'tower', 'storage', 'container',
+            'road',
             'link', 'extractor', 'terminal', 'lab', 'factory',
-            'nuker', 'powerSpawn', 'observer', 'rampart', 'road', 'constructedWall'
+            'nuker', 'powerSpawn', 'observer', 'rampart', 'constructedWall'
         ];
         
         for (const type of priority) {
@@ -122,14 +140,15 @@ const AutoPlanner = {
                 
                 const x = pos[0];
                 const y = pos[1];
-                
-                // Check if structure already exists
-                const structuresAtPos = room.lookForAt(LOOK_STRUCTURES, x, y);
-                if (structuresAtPos.some(s => s.structureType === type)) continue;
-                
-                // Check if site already exists
-                const sitesAtPos = room.lookForAt(LOOK_CONSTRUCTION_SITES, x, y);
-                if (sitesAtPos.length > 0) continue;
+
+                const key = `${x},${y}`;
+                const typedKey = `${x},${y},${type}`;
+                if (existingTypeSet.has(typedKey)) continue;
+                if (type === STRUCTURE_RAMPART) {
+                    if (existingTypeSet.has(`${x},${y},${STRUCTURE_RAMPART}`)) continue;
+                } else {
+                    if (blockedPosSet.has(key)) continue;
+                }
                 
                 // Create site
                 const result = room.createConstructionSite(x, y, type);

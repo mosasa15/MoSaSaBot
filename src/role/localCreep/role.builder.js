@@ -13,21 +13,44 @@ var roleBuilder = {
         
         if (creep.memory.building) { 
             creep.memory.dontPullMe = true; 
-            const constructionSites = creep.room.find(FIND_CONSTRUCTION_SITES); // 寻找建筑位 
-            
-            if(constructionSites.length > 0){
-                // Priority: Spawn > Extension > Tower > Storage > Container > Others
-                let target = constructionSites.find(s => s.structureType == STRUCTURE_SPAWN);
-                if (!target) target = constructionSites.find(s => s.structureType == STRUCTURE_EXTENSION);
-                if (!target) target = constructionSites.find(s => s.structureType == STRUCTURE_TOWER);
-                if (!target) target = constructionSites.find(s => s.structureType == STRUCTURE_STORAGE);
-                if (!target) target = constructionSites.find(s => s.structureType == STRUCTURE_CONTAINER);
-                
-                if (!target) {
-                    target = creep.pos.findClosestByRange(constructionSites);
+            let target = null;
+            if (creep.memory.targetSiteId) {
+                const t = Game.getObjectById(creep.memory.targetSiteId);
+                if (t) target = t;
+                else creep.memory.targetSiteId = null;
+            }
+
+            if (!target) {
+                const constructionSites = creep.room.find(FIND_CONSTRUCTION_SITES);
+                if (constructionSites.length > 0) {
+                    const pickClosestOfType = (type) => {
+                        const typed = constructionSites.filter(s => s.structureType === type);
+                        if (typed.length === 0) return null;
+                        return creep.pos.findClosestByRange(typed);
+                    };
+
+                    const totalSites = constructionSites.length;
+                    const roadSites = constructionSites.filter(s => s.structureType === STRUCTURE_ROAD);
+                    const preferRoad = roadSites.length > 0 && (totalSites > 20 || creep.room.controller.level <= 3);
+
+                    if (preferRoad) {
+                        target = creep.pos.findClosestByRange(roadSites);
+                    }
+
+                    if (!target) target = pickClosestOfType(STRUCTURE_SPAWN);
+                    if (!target) target = pickClosestOfType(STRUCTURE_EXTENSION);
+                    if (!target) target = pickClosestOfType(STRUCTURE_TOWER);
+                    if (!target) target = pickClosestOfType(STRUCTURE_STORAGE);
+                    if (!target) target = pickClosestOfType(STRUCTURE_CONTAINER);
+                    if (!target) target = pickClosestOfType(STRUCTURE_ROAD);
+                    if (!target) target = creep.pos.findClosestByRange(constructionSites);
+
+                    if (target) creep.memory.targetSiteId = target.id;
                 }
-                
-                this.buildConstruction_Sites(creep, target);  
+            }
+
+            if (target) {
+                this.buildConstruction_Sites(creep, target);
             } else {
                 // If no construction sites, upgrade controller
                 if (creep.upgradeController(creep.room.controller) == ERR_NOT_IN_RANGE) {  
