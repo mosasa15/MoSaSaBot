@@ -16,12 +16,20 @@ var roleBuilder = {
             const constructionSites = creep.room.find(FIND_CONSTRUCTION_SITES); // 寻找建筑位 
             
             if(constructionSites.length > 0){
-                const closestSites = creep.pos.findClosestByRange(constructionSites);
-                this.buildConstruction_Sites(creep, closestSites);  
+                // Priority: Spawn > Extension > Tower > Storage > Container > Others
+                let target = constructionSites.find(s => s.structureType == STRUCTURE_SPAWN);
+                if (!target) target = constructionSites.find(s => s.structureType == STRUCTURE_EXTENSION);
+                if (!target) target = constructionSites.find(s => s.structureType == STRUCTURE_TOWER);
+                if (!target) target = constructionSites.find(s => s.structureType == STRUCTURE_STORAGE);
+                if (!target) target = constructionSites.find(s => s.structureType == STRUCTURE_CONTAINER);
+                
+                if (!target) {
+                    target = creep.pos.findClosestByRange(constructionSites);
+                }
+                
+                this.buildConstruction_Sites(creep, target);  
             } else {
-                // If no construction sites, maybe repair?
-                // For now, just idle or upgrade
-                // creep.say('Idle');
+                // If no construction sites, upgrade controller
                 if (creep.upgradeController(creep.room.controller) == ERR_NOT_IN_RANGE) {  
                     creep.moveTo(creep.room.controller, { visualizePathStyle: { stroke: '#ffffff' } });  
                 } 

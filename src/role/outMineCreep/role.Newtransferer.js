@@ -10,12 +10,16 @@ var roleNewtransferer = {
     withdrawEnergy: function(creep) {
         var targetContainer = null;
         var containers = creep.room.container;
+        
+        // Generic Logic: Use workLoc or find closest container
         if (containers.length > 0) {
-            if(creep.memory.sourceRoomName === 'E55N13'){
-                targetContainer = containers[0];
-            } else{
+            // Check bounds for workLoc
+            if (creep.memory.workLoc !== undefined && containers[creep.memory.workLoc]) {
                 targetContainer = containers[creep.memory.workLoc];
+            } else {
+                targetContainer = creep.pos.findClosestByRange(containers);
             }
+            
             if (targetContainer) {
                 if (creep.withdraw(targetContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                     creep.moveTo(targetContainer, {visualizePathStyle: {stroke: '#ffffff'}});
@@ -29,29 +33,32 @@ var roleNewtransferer = {
 
     // 转移能量到Storage
     transferEnergy: function(creep) {
-        if(creep.memory.targetRoomName === 'E54N19' && creep.memory.sourceRoomName === 'E54N18'){
-            const link = creep.room['66bcffdf5302fa689e506b9c'];
-            if (creep.transfer(link, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(link, {visualizePathStyle: {stroke: '#ffffff'}});
-            }
-            if (creep.store[RESOURCE_ENERGY] === 0) {
-                creep.memory.state = 'RETURN_TO_SOURCE';
-            }
-        } else if(creep.memory.targetRoomName === 'E56N13' && creep.memory.sourceRoomName === 'E57N13'){
-            const link = creep.room['66cd935ddb9e570ef3e81c37'];
-            if (creep.transfer(link, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+        // Dynamic Link Logic
+        // Check if there is a configured link in memory
+        const linkId = creep.memory.targetLinkId || Memory.rooms[creep.room.name]?.centerLinkId;
+        const link = linkId ? Game.getObjectById(linkId) : null;
+        
+        if (link && link.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
+             if (creep.transfer(link, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                 creep.moveTo(link, {visualizePathStyle: {stroke: '#ffffff'}});
             }
             if (creep.store[RESOURCE_ENERGY] === 0) {
                 creep.memory.state = 'RETURN_TO_SOURCE';
             }
         } else {
+            // Fallback to Storage
             var targets = creep.room.storage;
-            if (creep.transfer(targets, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(targets, {visualizePathStyle: {stroke: '#ffffff'}});
-            }
-            if (creep.store[RESOURCE_ENERGY] === 0) {
-                creep.memory.state = 'RETURN_TO_SOURCE';
+            if (targets) {
+                if (creep.transfer(targets, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(targets, {visualizePathStyle: {stroke: '#ffffff'}});
+                }
+                if (creep.store[RESOURCE_ENERGY] === 0) {
+                    creep.memory.state = 'RETURN_TO_SOURCE';
+                }
+            } else {
+                // If no storage, maybe terminal or spawn/extension?
+                // For a transferer, usually storage is the hub.
+                // If nothing, idle.
             }
         }
     },
@@ -62,10 +69,10 @@ var roleNewtransferer = {
         if (road && road.hits < road.hitsMax) {
             creep.repair(road);
         } else {
-            var result = Game.rooms[creep.room.name].createConstructionSite(creep.pos.x, creep.pos.y, STRUCTURE_ROAD);  
-            if (result === OK) {  
-                console.log(`${creep.name} 已创建一条路在 ${creep.pos}`);  
-            }  
+            // Only create construction site if we are sure? 
+            // Creating sites automatically can be spammy. 
+            // Commenting out for generic bot safety unless explicitly enabled.
+            // var result = Game.rooms[creep.room.name].createConstructionSite(creep.pos.x, creep.pos.y, STRUCTURE_ROAD);  
         }
     },
 
@@ -75,6 +82,10 @@ var roleNewtransferer = {
         // 根据当前状态执行操作
         const sourceRoomName = creep.memory.sourceRoomName;
         const targetRoomName = creep.memory.targetRoomName;
+        
+        // Safety check for room names
+        if (!sourceRoomName || !targetRoomName) return;
+
         switch (creep.memory.state) {
             case 'RETURN_TO_SOURCE':
                 if (creep.room.name !== sourceRoomName) {

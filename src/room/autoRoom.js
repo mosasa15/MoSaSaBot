@@ -1,10 +1,14 @@
 import InsectNameManager from '@/module/creepNameManager';
 import BodyGenerator from '@/utils/bodyGenerator';
+import AutoPlanner from '../modules/autoPlanner/index.js';
 
 var AutoRoom = {
     run: function(room) {
         // Basic validations
         if (!room || !room.controller || !room.controller.my) return;
+        
+        // Auto Planner & Construction
+        AutoPlanner.run(room);
         
         const roomName = room.name;
         const spawns = room.spawn || []; // Assumes room.spawn is available via cache

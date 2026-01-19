@@ -5,13 +5,13 @@ var roleCentraltransferer = {
      */  
     run: function(creep) {  
         const roomMemory = Memory.rooms[creep.room.name];  
-        const targetPosition = this.getTargetPosition(creep.room.name);  
+        const targetPosition = this.getTargetPosition(creep.room);  
 
         // 防止被拉动  
         creep.memory.dontPullMe = true;  
 
         // 移动到目标位置  
-        if (!creep.pos.isEqualTo(targetPosition)) {  
+        if (targetPosition && !creep.pos.isEqualTo(targetPosition)) {  
             creep.moveTo(targetPosition, { visualizePathStyle: { stroke: '#ffaa00', opacity: 0.5, lineStyle: 'dashed' } });  
         } else {  
             // 到达目标位置后执行能量管理逻辑  
@@ -20,22 +20,33 @@ var roleCentraltransferer = {
     },  
 
     /**  
-     * 根据房间名称获取中央转运者的目标位置  
-     * @param {string} roomName 房间名称  
+     * 动态计算中央转运者的目标位置  
+     * 默认为 Storage 和 Terminal 的中心点，或者根据内存中设置的 centerPos
+     * @param {Room} room 房间对象  
      * @returns {RoomPosition} 目标位置  
      */  
-    getTargetPosition: function(roomName) {  
-        const positions = {  
-            'E54N19': new RoomPosition(5, 9, roomName),  
-            'E56N13': new RoomPosition(43, 16, roomName),  
-            'E53N19': new RoomPosition(11, 38, roomName),  
-            'E55N21': new RoomPosition(6, 20, roomName),  
-            'E56N17': new RoomPosition(35, 21, roomName),  
-            'E55N9': new RoomPosition(31, 4, roomName),  
-            'E58N14': new RoomPosition(26, 29, roomName), 
-            'E53N1': new RoomPosition(42, 28, roomName)
-        };  
-        return positions[roomName] || null;  
+    getTargetPosition: function(room) {  
+        // 优先使用内存中的配置
+        if (Memory.rooms[room.name] && Memory.rooms[room.name].centerPos) {
+            const pos = Memory.rooms[room.name].centerPos;
+            return new RoomPosition(pos.x, pos.y, room.name);
+        }
+
+        // 动态计算：取 Storage 和 Terminal 的中点
+        const storage = room.storage;
+        const terminal = room.terminal;
+
+        if (storage && terminal) {
+            const midX = Math.floor((storage.pos.x + terminal.pos.x) / 2);
+            const midY = Math.floor((storage.pos.y + terminal.pos.y) / 2);
+            return new RoomPosition(midX, midY, room.name);
+        }
+        
+        // 如果只有一个存在，就待在那旁边
+        if (storage) return new RoomPosition(storage.pos.x + 1, storage.pos.y, room.name);
+        if (terminal) return new RoomPosition(terminal.pos.x + 1, terminal.pos.y, room.name);
+
+        return null;  
     },  
 
     /**  
@@ -46,8 +57,21 @@ var roleCentraltransferer = {
     manageEnergy: function(creep, roomMemory) {  
         const terminal = creep.room.terminal;  
         const storage = creep.room.storage;  
-        const centerLink = creep.room[roomMemory.centerLinkId];  
+        
+        // 使用 memory 中的 centerLinkId 或 动态寻找
+        let centerLink = null;
+        if (roomMemory.centerLinkId) {
+            centerLink = Game.getObjectById(roomMemory.centerLinkId);
+        } else {
+            // 尝试动态寻找附近的 Link
+            const nearbyLinks = creep.pos.findInRange(FIND_STRUCTURES, 2, {
+                filter: s => s.structureType === STRUCTURE_LINK
+            });
+            if (nearbyLinks.length > 0) centerLink = nearbyLinks[0];
+        }
+        
         const tasksList = roomMemory.tasks;  
+        if (!tasksList) return;
 
         this.ensureRelevantResources(creep, storage, tasksList);
 
@@ -184,8 +208,8 @@ var roleCentraltransferer = {
         if (task) {  
             //console.log(creep.name)
             const { from, to, resourceType, amount } = task.details; 
-            const source = creep.room[from];  
-            const target = creep.room[to];  
+            const source = Game.getObjectById(from); // 使用 ID 获取对象，更安全  
+            const target = Game.getObjectById(to);  
             const Id = task.Id
             const targetAmount = Math.min(amount, creep.store.getCapacity(resourceType));
             //console.log(targetAmount)
@@ -206,7 +230,7 @@ var roleCentraltransferer = {
                 // 如果没有找到 source 或 target，移除任务  
                 this.completeTaskById(creep, tasks, Id);  // 无效的任务也通过 ID 删除
             }  
-            if (source.store[resourceType] === 0) {  
+            if (source && source.store[resourceType] === 0) {  
                 // 任务完成后，根据 ID 删除任务
                 this.completeTaskById(creep, tasks, Id);  
             }
@@ -256,4 +280,4 @@ var roleCentraltransferer = {
 };  
 
 
-export default roleCentraltransferer;  
+export default roleCentraltransferer;
