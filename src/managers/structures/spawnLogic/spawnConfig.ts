@@ -1,5 +1,5 @@
 // modules/constants/spawnConfig.js
-
+declare const _: any;
 import { DOWNGRADE_PROTECTION } from '@/config/protectionConfig';
 
 /**
@@ -98,8 +98,8 @@ export const ROLE_CONFIGS = {
         limit: room => {
             const sources = room.source || room.find(FIND_SOURCES);
             
-            // Early Game (RCL 1): Allow multiple harvesters based on available spaces
-            if (room.controller && room.controller.level === 1) {
+            // Low Level (RCL <= 2): Allow multiple harvesters based on available spaces
+            if (room.controller && room.controller.level <= 2) {
                 let totalSpaces = 0;
                 const terrain = room.getTerrain();
                 sources.forEach(source => {
@@ -111,7 +111,7 @@ export const ROLE_CONFIGS = {
                             }
                         }
                     }
-                    totalSpaces += Math.min(3, spaces); // Cap at 3 per source
+                    totalSpaces += spaces; // Strictly cap by available spaces
                 });
                 return totalSpaces;
             }
@@ -175,6 +175,8 @@ export const ROLE_CONFIGS = {
         condition: room => {
             const controller = room.controller;
             if (!controller || !controller.my) return false;
+            // Only start regular upgrader from RCL 2, let earlyUpgrader handle RCL 1
+            if (controller.level < 2) return false;
             if (controller.level >= 8) return false;
             if (controller.level <= 3) return true;
             // Configurable threshold check
@@ -375,6 +377,69 @@ export const ROLE_CONFIGS = {
             //resourceType: null,            // 根据指令动态调整
             //amount: 1000                   // 单次运输量
         })
+    },
+
+    // 侦查兵 - 探索周边房间
+    scout: {
+        body: getBodyConfig(
+            { [MOVE]: 1 },
+            { [MOVE]: 1 },
+            { [MOVE]: 1 },
+            { [MOVE]: 1 },
+            { [MOVE]: 1 },
+            { [MOVE]: 1 },
+            { [MOVE]: 1 },
+            { [MOVE]: 1 }
+        ),
+        priority: 3,
+        condition: room => {
+            if (room.controller.level < 2) return false;
+            if (!room.memory.remoteTasks) return false;
+            // Check if there are pending scout tasks
+            return _.some(room.memory.remoteTasks, (task: any) => task.type === 'scout');
+        },
+        limit: 1, // Will spawn based on task availability in memory loop
+        memory: (room) => {
+            const taskKey = _.findKey(room.memory.remoteTasks, (t: any) => t.type === 'scout');
+            const task = room.memory.remoteTasks[taskKey];
+            delete room.memory.remoteTasks[taskKey]; // Remove task once assigned (simple queue)
+            return {
+                role: 'scout',
+                targetRoom: task.targetRoom
+            };
+        }
+    },
+
+    // 远程采集者 - 开采外矿
+    remoteHarvester: {
+        body: getBodyConfig(
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 }, // RCL 1 fallback
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 2 }, // RCL 2 (Move on roads)
+            { [WORK]: 3, [CARRY]: 1, [MOVE]: 2 },
+            { [WORK]: 4, [CARRY]: 1, [MOVE]: 3 },
+            { [WORK]: 5, [CARRY]: 1, [MOVE]: 3 },
+            { [WORK]: 5, [CARRY]: 1, [MOVE]: 3 },
+            { [WORK]: 5, [CARRY]: 1, [MOVE]: 3 },
+            { [WORK]: 5, [CARRY]: 1, [MOVE]: 3 }
+        ),
+        priority: 4,
+        condition: room => {
+            if (room.controller.level < 2) return false;
+            if (!room.memory.remoteTasks) return false;
+            return _.some(room.memory.remoteTasks, (task: any) => task.type === 'remoteHarvester');
+        },
+        limit: 2, // Limit concurrent spawns
+        memory: (room) => {
+            const taskKey = _.findKey(room.memory.remoteTasks, (t: any) => t.type === 'remoteHarvester');
+            const task = room.memory.remoteTasks[taskKey];
+            delete room.memory.remoteTasks[taskKey];
+            return {
+                role: 'remoteHarvester',
+                targetRoom: task.targetRoom,
+                sourceId: task.sourceId,
+                taskID: taskKey // Keep track if needed
+            };
+        }
     },
 
     // 矿工 - 负责开采矿藏

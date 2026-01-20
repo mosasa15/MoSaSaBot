@@ -588,7 +588,7 @@ function trySwap(creep, pos, bypassHostileCreeps, ignoreCreeps) {     // ERR_NOT
                 }
                 if (creepMoveCache[c.name] != Game.time && originMove.call(c, getDirection(pos, creep.pos)) == ERR_NO_BODYPART && creep.pull) {
                     creep.pull(c);
-                    originMove.call(c, creep);
+                    originMove.call(c, getDirection(c.pos, creep.pos));
                 }
             } else if (bypassHostileCreeps && (!c.room.controller || !c.room.controller.my || !c.room.controller.safeMode)) {  // 第二种不可穿情况：希望绕过敌对creep
                 return ERR_INVALID_TARGET;

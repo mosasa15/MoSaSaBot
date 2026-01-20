@@ -7,6 +7,9 @@ var AutoRoom = {
         // Basic validations
         if (!room || !room.controller || !room.controller.my) return;
         
+        // Visualize Creep Stats
+        this.drawVisuals(room);
+        
         // Auto Planner & Construction
         AutoPlanner.run(room);
         
@@ -70,6 +73,23 @@ var AutoRoom = {
             }
         }
         */
+    },
+    
+    drawVisuals: function(room) {
+        const creeps = room.find(FIND_MY_CREEPS);
+        const roleCounts: {[key: string]: number} = {};
+        
+        creeps.forEach(c => {
+            const role = c.memory.role || 'unknown';
+            roleCounts[role] = (roleCounts[role] || 0) + 1;
+        });
+        
+        let y = 1;
+        room.visual.text(`Creep Stats (Total: ${creeps.length})`, 1, y++, {align: 'left', opacity: 0.8, color: '#ffffff'});
+        
+        Object.keys(roleCounts).sort().forEach(role => {
+            room.visual.text(`${role}: ${roleCounts[role]}`, 1, y++, {align: 'left', font: 0.6, opacity: 0.8, color: '#cccccc'});
+        });
     }
 };
 

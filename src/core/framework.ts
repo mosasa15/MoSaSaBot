@@ -25,11 +25,11 @@ export const createApp = () => {
     let lastTime = 0;
     const MemoryCacher = () => {
         if (_MemoryCache && lastTime && Game.time == lastTime + 1) {
-            delete global.Memory;
-            global.Memory = _MemoryCache;
-            (RawMemory as any)._parsed = global.Memory;
+            delete (global as any).Memory;
+            (global as any).Memory = _MemoryCache;
+            (RawMemory as any)._parsed = (global as any).Memory;
         } else {
-            _MemoryCache = global.Memory;
+            _MemoryCache = (global as any).Memory;
         }
         lastTime = Game.time;
     }

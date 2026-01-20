@@ -120,21 +120,33 @@ export default {
             }
         }
 
+        // Helper to count queued creeps
+        const getQueuedCount = (role) => {
+            const queue = Memory.rooms[room.name].spawnQueue || [];
+            return queue.filter(t => t.role === role).length;
+        };
+
         const roomCounts = global.creepNum[room.name] || {};
-        if ((roomCounts.harvester || 0) === 0 && room.energyAvailable >= 200) {
+        
+        // Emergency Harvester Check (Include queue!)
+        const harvesterCount = (roomCounts.harvester || 0) + getQueuedCount('harvester');
+        if (harvesterCount === 0 && room.energyAvailable >= 200) {
             tasks.push({
                 role: 'harvester',
                 priority: 100,
                 valid: true,
-                body: getAffordableBody('harvester', room.energyAvailable)
+                body: getAffordableBody('harvester', room.energyAvailable, room)
             });
         }
-        if ((roomCounts.upgrader || 0) === 0 && room.controller && room.controller.my && room.controller.level < 8 && room.energyAvailable >= 200) {
+        
+        // Emergency Upgrader Check (Include queue!)
+        const upgraderCount = (roomCounts.upgrader || 0) + getQueuedCount('upgrader');
+        if (upgraderCount === 0 && room.controller && room.controller.my && room.controller.level < 8 && room.energyAvailable >= 200) {
             tasks.push({
                 role: 'upgrader',
                 priority: 90,
                 valid: true,
-                body: getAffordableBody('upgrader', room.energyAvailable)
+                body: getAffordableBody('upgrader', room.energyAvailable, room)
             });
         }
 
@@ -145,7 +157,10 @@ export default {
                 if (!global.creepNum[room.name]) global.creepNum[room.name] = {};
                 
                 const currentLimit = typeof config.limit === 'function' ? config.limit(room) : config.limit;
-                const count = global.creepNum[room.name][role] || 0;
+                
+                // Include queued creeps in the count to prevent over-spawning
+                const count = (global.creepNum[room.name][role] || 0) + getQueuedCount(role);
+                
                 //console.log(role,currentLimit,count);
                 // 如果满足生成条件且数量未达到上限，添加生成任务
                 if (config.condition(room) && count < currentLimit) {
@@ -247,7 +262,7 @@ export default {
             // 重新计算无效的 body 或 cost
             if (!task.body || task.body.length === 0 || !task.cost) {
                 // 尝试重新生成 body
-                const newBody = getAffordableBody(task.role, Math.max(room.energyAvailable, 300));
+                const newBody = getAffordableBody(task.role, Math.max(room.energyAvailable, 300), room);
                 if (newBody && newBody.length > 0) {
                     task.body = newBody;
                     task.cost = calculateCost(newBody);
@@ -284,7 +299,7 @@ export default {
                 let body = task.body;
                 let cost = task.cost;
                 if (cost > remainingEnergy) {
-                    body = getAffordableBody(task.role, remainingEnergy);
+                    body = getAffordableBody(task.role, remainingEnergy, room);
                     if (!body || body.length === 0) continue;
                     cost = calculateCost(body);
                 }
@@ -478,10 +493,20 @@ function calculateCost(body) {
     return body.reduce((sum, part) => sum + BODYPART_COST[part], 0);
 }
 
-function getAffordableBody(role, energyAvailable) {
+function getAffordableBody(role, energyAvailable, room) {
     if (role === 'harvester') {
         // Specialized Miner Body: Max 5 WORK, 1 CARRY, 1 MOVE
         // Cost: WORK(100) + CARRY(50) + MOVE(50) = 200 min
+        
+        // Check if we have existing harvesters (to enforce minimum quality)
+        const harvesterCount = room ? ((global.creepNum[room.name]?.harvester || 0)) : 0;
+        
+        // If we already have harvesters, we should wait for at least 300 energy (2W 1C 1M)
+        // to ensure we don't spawn inefficient 1W creeps that clog the source.
+        if (harvesterCount > 0 && energyAvailable < 300) {
+            return []; // Skip this tick, wait for energy
+        }
+
         const maxEnergy = energyAvailable;
         let workParts = Math.floor((maxEnergy - 100) / 100);
         if (workParts > 5) workParts = 5;

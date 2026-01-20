@@ -62,25 +62,26 @@ var roleUpgrader = {
             } 
             return;
         }
+
+        // Priority 4: Any Container (Global Search)
+        // Find closest container with enough energy
+        const container = creep.pos.findClosestByRange(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 100 // Don't drain nearly empty ones
+        });
+        if (container) {
+            if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(container, { visualizePathStyle: { stroke: '#ffaa00' } });
+            }
+            return;
+        }
         
-        // Priority 4: Harvest from Source (Smart Logic)
+        // Priority 5: Harvest from Source (Fallback Logic)
         const sources = creep.room.source || creep.room.find(FIND_SOURCES);
         const sourceIndex = (creep.memory.workLoc || 0) % sources.length;
         const source = sources[sourceIndex];
         
         if (source) {
-            // 4.1 Try nearby Container
-            const sourceContainer = source.pos.findInRange(FIND_STRUCTURES, 2, {
-                filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
-            })[0];
-            if (sourceContainer) {
-                if (creep.withdraw(sourceContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(sourceContainer, { visualizePathStyle: { stroke: '#ffaa00' } });
-                }
-                return;
-            }
-
-            // 4.2 Try nearby Dropped Resources
+            // 5.1 Try nearby Dropped Resources
             const dropped = source.pos.findInRange(FIND_DROPPED_RESOURCES, 3, {
                 filter: r => r.resourceType === RESOURCE_ENERGY
             })[0];
@@ -91,21 +92,25 @@ var roleUpgrader = {
                 return;
             }
 
-            // 4.3 Check for Harvester
+            // 5.2 Check for Harvester (Dedicated miner)
             const harvesters = source.pos.findInRange(FIND_MY_CREEPS, 2, {
-                filter: c => c.memory.role === 'harvester'
+                filter: c => c.memory.role === 'harvester' || c.memory.role === 'miner'
             });
             
             if (harvesters.length > 0) {
-                // Harvester present, wait nearby
-                const harvester = harvesters[0];
-                if (creep.pos.getRangeTo(harvester) > 2) {
-                    creep.moveTo(harvester, { range: 2, visualizePathStyle: { stroke: '#5555ff', opacity: 0.5 } });
+                // Harvester present. Since we already checked ALL containers above and found none,
+                // and there is a miner here, we should just wait or park.
+                // Do NOT harvest directly.
+                
+                // Parking Logic: Keep distance 3 from miner to avoid blocking
+                if (creep.pos.getRangeTo(harvesters[0]) < 3) {
+                     // Move randomly away? Or just stay put if > 1
+                     // For now, let's just return. The creep will idle.
                 }
                 return;
             }
 
-            // 4.4 Fallback: Direct Harvest
+            // 5.3 Fallback: Direct Harvest (Only if NO dedicated harvester/miner exists)
             if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
                 creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
             }

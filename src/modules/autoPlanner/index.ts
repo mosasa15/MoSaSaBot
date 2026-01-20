@@ -128,6 +128,9 @@ const AutoPlanner = {
         const priority = [...corePriority, ...(allowRoad ? ['road'] : []), ...defensePriority];
         
         for (const type of priority) {
+            // Disable ramparts below RCL 4 to save energy
+            if (type === STRUCTURE_RAMPART && rcl < 4) continue;
+
             if (!layout[type]) continue;
             
             // Check how many we can build at this RCL
