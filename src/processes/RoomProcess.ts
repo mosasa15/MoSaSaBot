@@ -2,6 +2,7 @@ import { Process } from '../core/Process';
 import AutoRoom from '../managers/roomManager';
 import { SourceManager } from '../managers/SourceManager';
 import { CreepDemandManager } from '../managers/CreepDemandManager';
+import DowngradeMonitor from '@/managers/DowngradeMonitor';
 
 export class RoomProcess implements Process {
     public run(): void {
@@ -9,6 +10,7 @@ export class RoomProcess implements Process {
             const room = Game.rooms[roomName];
             if (room.controller && room.controller.my) {
                 try {
+                    DowngradeMonitor.run(room);
                     AutoRoom.run(room);
                     SourceManager.run(room);
                     CreepDemandManager.run(room);

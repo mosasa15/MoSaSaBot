@@ -9,6 +9,7 @@ import wallRepairer from '../roles/local/wallRepairer';
 import centralTransferer from '../roles/local/centralTransferer';
 import leveler from '../roles/local/leveler';
 import thinker from '../roles/local/thinker';
+import savior from '../roles/local/savior';
 
 import remoteHarvester from '../roles/remote/harvester';
 import remoteTransferer from '../roles/remote/transferer';
@@ -33,6 +34,8 @@ const roles: { [key: string]: { run: (creep: Creep) => void } } = {
     'centralTransferer': centralTransferer,
     'leveler': leveler,
     'thinker': thinker,
+    'savior': savior,
+    'earlyUpgrader': upgrader,
     
     'remoteHarvester': remoteHarvester,
     'remoteTransferer': remoteTransferer,

@@ -1,5 +1,7 @@
 // modules/constants/spawnConfig.js
 
+import { DOWNGRADE_PROTECTION } from '@/config/protectionConfig';
+
 /**
  * 队列配置常量：每个房间同时处理的最大生成任务数
  */
@@ -27,6 +29,55 @@ const getBodyConfig = function(...bodySets) {
  * 每个角色的身体部件根据等级线性增加
  */
 export const ROLE_CONFIGS = {
+    // 救世主 - 防止掉级
+    savior: {
+        body: getBodyConfig(
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 }, // Min: 2W 1C 1M
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 },
+            { [WORK]: 4, [CARRY]: 2, [MOVE]: 2 },
+            { [WORK]: 6, [CARRY]: 3, [MOVE]: 3 },
+            { [WORK]: 8, [CARRY]: 4, [MOVE]: 4 },
+            { [WORK]: 10, [CARRY]: 5, [MOVE]: 5 },
+            { [WORK]: 15, [CARRY]: 5, [MOVE]: 10 },
+            { [WORK]: 15, [CARRY]: 5, [MOVE]: 10 }
+        ),
+        priority: 100,
+        condition: room => {
+            const controller = room.controller;
+            return controller && controller.my && 
+                   controller.ticksToDowngrade < DOWNGRADE_PROTECTION.CRITICAL_THRESHOLD_TICKS;
+        },
+        limit: 1,
+        memory: (room) => ({
+            role: 'savior', 
+            upgrading: true // Ensure it starts working immediately if possible
+        })
+    },
+
+    // 早期升级者 - 快速冲级 (RCL 1)
+    earlyUpgrader: {
+        body: getBodyConfig(
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 }, // Min: 2W 1C 1M (Cost: 300)
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 },
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 },
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 },
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 },
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 },
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 },
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 }
+        ),
+        priority: 10, // Higher than harvester (8)
+        condition: room => {
+            const controller = room.controller;
+            return controller && controller.my && controller.level === 1;
+        },
+        limit: 1, // One is enough to rush to RCL 2 quickly
+        memory: (room) => ({
+            role: 'earlyUpgrader',
+            upgrading: true
+        })
+    },
+
     // 采集者 - 专注于能量采集
     harvester: {
         body: getBodyConfig(
@@ -126,7 +177,10 @@ export const ROLE_CONFIGS = {
             if (!controller || !controller.my) return false;
             if (controller.level >= 8) return false;
             if (controller.level <= 3) return true;
-            if (controller.ticksToDowngrade < 150000) return true;
+            // Configurable threshold check
+            const maxTicks = (CONTROLLER_DOWNGRADE && CONTROLLER_DOWNGRADE[controller.level]) || 0;
+            if (maxTicks && controller.ticksToDowngrade < maxTicks * DOWNGRADE_PROTECTION.WARNING_THRESHOLD_PERCENT) return true;
+            
             const storageEnergy = room.storage ? (room.storage.store[RESOURCE_ENERGY] || 0) : 0;
             const terminalEnergy = room.terminal ? (room.terminal.store[RESOURCE_ENERGY] || 0) : 0;
             return storageEnergy + terminalEnergy >= 30000;
@@ -323,38 +377,27 @@ export const ROLE_CONFIGS = {
         })
     },
 
-    // 矿工 - 开采 mineral
+    // 矿工 - 负责开采矿藏
     miner: {
         body: getBodyConfig(
-            { [WORK]: 1, [CARRY]: 1, [MOVE]: 1 },
-            { [WORK]: 2, [CARRY]: 2, [MOVE]: 2 },
-            { [WORK]: 3, [CARRY]: 3, [MOVE]: 3 },
-            { [WORK]: 4, [CARRY]: 4, [MOVE]: 4 },
-            { [WORK]: 5, [CARRY]: 5, [MOVE]: 5 },
-            { [WORK]: 10, [CARRY]: 10, [MOVE]: 10 },
-            { [WORK]: 15, [CARRY]: 10, [MOVE]: 13 },
-            { [WORK]: 20, [CARRY]: 10, [MOVE]: 15 }
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 }, // Min: 2W 1C 1M
+            { [WORK]: 2, [CARRY]: 1, [MOVE]: 1 },
+            { [WORK]: 6, [CARRY]: 1, [MOVE]: 3 },
+            { [WORK]: 8, [CARRY]: 2, [MOVE]: 4 },
+            { [WORK]: 12, [CARRY]: 2, [MOVE]: 6 },
+            { [WORK]: 15, [CARRY]: 4, [MOVE]: 8 },
+            { [WORK]: 20, [CARRY]: 4, [MOVE]: 10 },
+            { [WORK]: 25, [CARRY]: 5, [MOVE]: 13 }
         ),
         priority: 5,
         condition: room => {
-            // 检查房间条件
-            const mineral = room.mineral || room.find(FIND_MINERALS)[0];
-            if (!mineral || !room.terminal) return false;
-            
-            // 检查 mineral 是否有资源
-            if (mineral.mineralAmount === 0) return false;
-            
-            // 检查是否有 extractor
-            const extractor = mineral.pos.lookFor(LOOK_STRUCTURES).find(
-                structure => structure.structureType === STRUCTURE_EXTRACTOR
-            );
-            return extractor !== undefined;
+            if (room.controller.level < 6) return false;
+            const mineral = room.find(FIND_MINERALS)[0];
+            return mineral && mineral.mineralAmount > 0 && 
+                   (!room.storage || room.storage.store.getFreeCapacity() > 10000);
         },
-        limit: 0,
-        memory: (room) => ({
-            role: 'miner',
-            //harvesting: true
-        })
+        limit: 1,
+        memory: (room) => ({ role: 'miner' })
     },
 };
 
