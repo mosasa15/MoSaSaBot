@@ -1,0 +1,9 @@
+export const ECONOMY_CONTROL = {
+    UPGRADE_THROTTLE: {
+        MIN_RCL: 4,
+        ENERGY_RATIO_PAUSE: 0.6,
+        ENERGY_RATIO_RESUME: 0.85,
+        STORAGE_ENERGY_PAUSE: 15000,
+        STORAGE_ENERGY_RESUME: 25000
+    }
+};

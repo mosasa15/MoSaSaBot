@@ -1252,9 +1252,13 @@ function betterMoveTo(firstArg, secondArg, opts) {
                     }
                     //this.say('正常');
                     return moveOneStep(this, ops.visualizePathStyle, toPos);
-                } else if (idx + 1 in posArray && idx + 2 in posArray && isEqual(this.pos, posArray[idx + 1])) {  // 跨房了
+                } else if (idx + 1 in posArray && isEqual(this.pos, posArray[idx + 1])) {  // 跨房了
                     creepCache.idx++;
-                    if (!path.directionArray[idx + 2]) {  // 第一次见到该房则检查房间
+                    const nextIdx = creepCache.idx + 1;
+                    if (!(nextIdx in posArray)) {
+                        return OK;
+                    }
+                    if (!path.directionArray[nextIdx]) {  // 第一次见到该房则检查房间
                         if (checkRoom(this.room, path, creepCache.idx)) {   // 传creep所在位置的idx
                             //this.say('新房 可走');
                             //console.log(`${Game.time}: ${this.name} check room ${this.pos.roomName} OK`);

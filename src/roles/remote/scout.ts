@@ -15,6 +15,10 @@ var roleScout = {
         } else {
             // We are in the target room, gather intelligence
             this.scoutRoom(creep);
+            const center = new RoomPosition(25, 25, targetRoom);
+            if (creep.pos.getRangeTo(center) > 6) {
+                creep.moveTo(center, { range: 6, visualizePathStyle: { stroke: '#ffffff' } });
+            }
             
             // Mission accomplished, maybe recycle or move to next target?
             // For now, just stay here to monitor or suicide to save CPU if single-use.

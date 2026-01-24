@@ -1,5 +1,6 @@
 // modules/constants/spawnConfig.js
 declare const _: any;
+import { ECONOMY_CONTROL } from '@/config/economyConfig';
 import { DOWNGRADE_PROTECTION } from '@/config/protectionConfig';
 
 /**
@@ -23,6 +24,32 @@ const getBodyConfig = function(...bodySets) {
 
     return config;
 };
+
+function isDowngradeUrgent(room) {
+    const controller = room.controller;
+    if (!controller || !controller.my) return false;
+    if (controller.ticksToDowngrade < DOWNGRADE_PROTECTION.CRITICAL_THRESHOLD_TICKS) return true;
+    const maxTicks = (CONTROLLER_DOWNGRADE && CONTROLLER_DOWNGRADE[controller.level]) || 0;
+    if (maxTicks && controller.ticksToDowngrade < maxTicks * DOWNGRADE_PROTECTION.WARNING_THRESHOLD_PERCENT) return true;
+    return false;
+}
+
+function isUpgradeThrottled(room) {
+    const controller = room.controller;
+    if (!controller || !controller.my) return false;
+    const throttle = ECONOMY_CONTROL.UPGRADE_THROTTLE;
+    if (controller.level < throttle.MIN_RCL) return false;
+    const cap = room.energyCapacityAvailable || 0;
+    const ratio = cap > 0 ? room.energyAvailable / cap : 1;
+    const storageEnergy = room.storage ? (room.storage.store[RESOURCE_ENERGY] || 0) : 0;
+    const tasks = Memory.rooms && Memory.rooms[room.name] && Memory.rooms[room.name].tasks
+        ? Memory.rooms[room.name].tasks
+        : [];
+    const hasFillExtensionTask = tasks.some(t => t && t.type === 'fillExtension');
+    const energyLow = ratio <= throttle.ENERGY_RATIO_PAUSE;
+    const storageLow = room.storage && storageEnergy <= throttle.STORAGE_ENERGY_PAUSE;
+    return hasFillExtensionTask || energyLow || storageLow;
+}
 
 /**
  * 角色配置中心
@@ -179,6 +206,7 @@ export const ROLE_CONFIGS = {
             if (controller.level < 2) return false;
             if (controller.level >= 8) return false;
             if (controller.level <= 3) return true;
+            if (isUpgradeThrottled(room) && !isDowngradeUrgent(room)) return false;
             // Configurable threshold check
             const maxTicks = (CONTROLLER_DOWNGRADE && CONTROLLER_DOWNGRADE[controller.level]) || 0;
             if (maxTicks && controller.ticksToDowngrade < maxTicks * DOWNGRADE_PROTECTION.WARNING_THRESHOLD_PERCENT) return true;
@@ -190,6 +218,7 @@ export const ROLE_CONFIGS = {
         limit: (room) => {
             const cpuMultiplier = global.cpuMultiplier || 1;
             const storedEnergy = room.storage ? (room.storage.store[RESOURCE_ENERGY] || 0) : 0;
+            if (isUpgradeThrottled(room) && !isDowngradeUrgent(room)) return 0;
             if (storedEnergy < 20000) return 1;
             return Math.min(3, Math.max(1, Math.ceil(cpuMultiplier)));
         },
