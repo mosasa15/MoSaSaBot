@@ -126,11 +126,21 @@ export default {
             return queue.filter(t => t.role === role).length;
         };
 
+        const getQueuedSpawnableCount = (role) => {
+            const queue = Memory.rooms[room.name].spawnQueue || [];
+            return queue.filter((t: any) => {
+                if (!t || t.role !== role) return false;
+                if (!t.body || t.body.length === 0) return false;
+                const cost = typeof t.cost === 'number' ? t.cost : calculateCost(t.body);
+                return cost > 0 && cost <= room.energyAvailable;
+            }).length;
+        };
+
         const roomCounts = global.creepNum[room.name] || {};
         
         // Emergency Harvester Check (Include queue!)
-        const harvesterCount = (roomCounts.harvester || 0) + getQueuedCount('harvester');
-        if (harvesterCount === 0 && room.energyAvailable >= 200) {
+        const harvesterCountForEmergency = (roomCounts.harvester || 0) + getQueuedSpawnableCount('harvester');
+        if (harvesterCountForEmergency === 0 && room.energyAvailable >= 200) {
             tasks.push({
                 role: 'harvester',
                 priority: 100,
@@ -140,8 +150,8 @@ export default {
         }
         
         // Emergency Upgrader Check (Include queue!)
-        const upgraderCount = (roomCounts.upgrader || 0) + getQueuedCount('upgrader');
-        if (upgraderCount === 0 && room.controller && room.controller.my && room.controller.level < 8 && room.energyAvailable >= 200) {
+        const upgraderCountForEmergency = (roomCounts.upgrader || 0) + getQueuedSpawnableCount('upgrader');
+        if (upgraderCountForEmergency === 0 && room.controller && room.controller.my && room.controller.level < 8 && room.energyAvailable >= 200) {
             tasks.push({
                 role: 'upgrader',
                 priority: 90,
@@ -192,14 +202,25 @@ export default {
     getBodyForRoom: withCpuMonitor('SpawnManager.getBodyForRoom', function(room, role) {
         const config = ROLE_CONFIGS[role];
         if (!config) return [WORK, CARRY, MOVE];
-        
-        const controllerLevel = room.controller.level;  // 获取控制器等级
-        //const energyCapacity = room.energyCapacityAvailable;  // 获取房间的最大能量容量
-        //console.log(controllerLevel);
-        //console.log(config.body);
-        // 获取控制器等级对应的身体部件配置
-        const bodyConfig = config.body[controllerLevel];
-        return bodyConfig || [WORK, CARRY, MOVE]; // Fallback
+
+        const cap = room.energyCapacityAvailable || room.energyAvailable || 300;
+        const tier =
+            cap >= 3300 ? 8 :
+            cap >= 2800 ? 7 :
+            cap >= 2300 ? 6 :
+            cap >= 1800 ? 5 :
+            cap >= 1300 ? 4 :
+            cap >= 800 ? 3 :
+            cap >= 550 ? 2 : 1;
+
+        for (let t = tier; t >= 1; t--) {
+            const bodyConfig = config.body && (config.body as any)[t];
+            if (!bodyConfig || bodyConfig.length === 0) continue;
+            if (calculateCost(bodyConfig) <= cap) return bodyConfig;
+        }
+
+        const fallback = config.body && ((config.body as any)[1] || (config.body as any)[room.controller.level]);
+        return fallback || [WORK, CARRY, MOVE];
     }),
 
     /**
@@ -216,27 +237,37 @@ export default {
         for (const task of tasks) { // 遍历待处理的任务列表
             const body = task.body; // 获取任务的身体部件配置
             if (!body || body.length === 0 || body.length > 50) continue; // 检查身体部件的有效性，长度必须在 1 到 50 之间
-            // 检查生成队列中是否已存在相同角色的任务
-            const existingTask = spawnQueue.find(t => t.role === task.role);
+            const taskWorkLoc = (task as any).workLoc;
+            const hasWorkLoc = typeof taskWorkLoc === 'number';
+            const existingTask = hasWorkLoc
+                ? spawnQueue.find((t: any) => t.role === task.role && t.workLoc === taskWorkLoc)
+                : spawnQueue.find((t: any) => t.role === task.role && typeof t.workLoc !== 'number');
             if ( existingTask ) { // 如果找到了相同角色的任务
-                // 如果新任务的优先级更高，则替换旧任务
                 if (task.priority > existingTask.priority) {
-                    const index = spawnQueue.indexOf(existingTask); // 获取旧任务的索引
-                    spawnQueue[index] = { // 替换旧任务
+                    const index = spawnQueue.indexOf(existingTask);
+                    spawnQueue[index] = {
+                        ...existingTask,
+                        ...task,
                         role: task.role,
                         body: body,
                         priority: task.priority,
-                        cost: calculateCost(body) // 计算新任务的能量成本
+                        cost: calculateCost(body)
                     };
+                } else if (!existingTask.body || existingTask.body.length === 0) {
+                    existingTask.body = body;
+                    existingTask.cost = calculateCost(body);
                 }
                 continue; // 继续处理下一个任务
             } else {
-                spawnQueue.push({ // 将新任务添加到生成队列
+                const queueTask: any = {
                     role: task.role,
                     body: body,
                     priority: task.priority,
-                    cost: calculateCost(body) // 计算任务的能量成本
-                });
+                    cost: calculateCost(body)
+                };
+                if ((task as any).workLoc !== undefined) queueTask.workLoc = (task as any).workLoc;
+                if ((task as any).valid !== undefined) queueTask.valid = (task as any).valid;
+                spawnQueue.push(queueTask);
             }
         }
         spawnQueue.sort((a, b) => b.priority - a.priority); // 按优先级对生成队列进行排序
@@ -260,16 +291,57 @@ export default {
                 continue;
             }
             // 重新计算无效的 body 或 cost
-            if (!task.body || task.body.length === 0 || !task.cost) {
-                // 尝试重新生成 body
-                const newBody = getAffordableBody(task.role, Math.max(room.energyAvailable, 300), room);
+            if (!task.body || task.body.length === 0 || typeof task.cost !== 'number' || task.cost <= 0) {
+                const newBody = this.getBodyForRoom(room, task.role);
                 if (newBody && newBody.length > 0) {
                     task.body = newBody;
                     task.cost = calculateCost(newBody);
-                    console.log(`[SpawnManager] 修复了任务 ${task.role} 的 body/cost`);
+                    if (task.role !== 'harvester') console.log(`[SpawnManager] 修复了任务 ${task.role} 的 body/cost`);
                 } else {
                     console.log(`[SpawnManager] 移除无效任务: ${task.role}`);
                     queue.splice(i, 1);
+                }
+            }
+        }
+
+        {
+            const removeIndices: number[] = [];
+            const bestByKey = new Map<string, number>();
+            for (let i = 0; i < queue.length; i++) {
+                const t: any = queue[i];
+                if (!t || t.role !== 'harvester') continue;
+                const key = typeof t.workLoc === 'number' ? `harvester:${t.workLoc}` : 'harvester:_';
+                const bestIdx = bestByKey.get(key);
+                if (bestIdx === undefined) {
+                    bestByKey.set(key, i);
+                    continue;
+                }
+                const best: any = queue[bestIdx];
+                const prioA = typeof t.priority === 'number' ? t.priority : 0;
+                const prioB = typeof best.priority === 'number' ? best.priority : 0;
+                if (prioA > prioB) {
+                    removeIndices.push(bestIdx);
+                    bestByKey.set(key, i);
+                } else {
+                    removeIndices.push(i);
+                }
+            }
+            removeIndices.sort((a, b) => b - a);
+            for (const idx of removeIndices) queue.splice(idx, 1);
+
+            const harvesterConfig = ROLE_CONFIGS.harvester as any;
+            const harvesterLimit = typeof harvesterConfig.limit === 'function' ? harvesterConfig.limit(room) : harvesterConfig.limit;
+            const harvesterCount = Object.values(Game.creeps).filter((c: Creep) => {
+                const mem = c.memory as any;
+                if (!mem || mem.role !== 'harvester') return false;
+                const home = mem.home || mem.sourceRoomName || mem.targetRoomName;
+                return home === room.name;
+            }).length;
+
+            if (typeof harvesterLimit === 'number' && harvesterCount >= harvesterLimit) {
+                for (let i = queue.length - 1; i >= 0; i--) {
+                    const t: any = queue[i];
+                    if (t && t.role === 'harvester' && typeof t.workLoc !== 'number') queue.splice(i, 1);
                 }
             }
         }
@@ -297,12 +369,19 @@ export default {
                 const task = queue[taskIndex];
                 if (!task) continue;
                 let body = task.body;
-                let cost = task.cost;
-                if (cost > remainingEnergy) {
-                    body = getAffordableBody(task.role, remainingEnergy, room);
+                if (!body || body.length === 0) {
+                    body = this.getBodyForRoom(room, task.role);
                     if (!body || body.length === 0) continue;
-                    cost = calculateCost(body);
+                    task.body = body;
+                    task.cost = calculateCost(body);
                 }
+
+                let cost = task.cost;
+                if (typeof cost !== 'number' || cost <= 0) {
+                    cost = calculateCost(body);
+                    task.cost = cost;
+                }
+
                 if (cost > remainingEnergy) continue;
                 if (this.tryAssignTask(spawn, task, body)) {
                     remainingEnergy -= cost;
