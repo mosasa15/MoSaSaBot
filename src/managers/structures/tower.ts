@@ -1,3 +1,6 @@
+import { ensureRoomTasks, pushRoomTask } from '@/utils/roomTasks';
+import { isAlly } from '@/systems/diplomacy/DiplomacyMarketSystem';
+
 var Tower = {  
     /**  
      * @param {StructureTower} tower - 当前的塔对象  
@@ -9,10 +12,7 @@ var Tower = {
         const towers = room.tower || room.find(FIND_MY_STRUCTURES, {filter: {structureType: STRUCTURE_TOWER}});
         if (!towers || towers.length === 0) return;
 
-        if (!Memory.rooms[roomName]) Memory.rooms[roomName] = {};
-        const roomMemory = Memory.rooms[roomName];
-        if (!roomMemory.tasks) roomMemory.tasks = [];
-        const tasksList = roomMemory.tasks;
+        const tasksList = ensureRoomTasks(roomName);
 
         // Run logic every tick for critical defense, but maybe less often for repair?
         // Defense is critical, so check every tick.
@@ -29,17 +29,40 @@ var Tower = {
     },
 
     defend: function(towers, hostiles) {
-        // Sort hostiles by threat (e.g., healers first, or closest)
-        // Simple strategy: Attack closest to each tower or focus fire.
-        // Focus fire is generally better.
-        
-        // Filter out allies if you have a whitelist system (omitted for pure auto for now, or add back if needed)
-        // const targets = hostiles.filter(c => !isAlly(c.owner.username));
-        const targets = hostiles; // Attack everyone not me
-
+        const targets = hostiles.filter(c => !isAlly(c.owner.username));
         if (targets.length === 0) return;
 
-        const target = targets[0]; // Focus fire on the first one (maybe sort by hits?)
+        const room = towers[0].room;
+        const spawns = room.find(FIND_MY_SPAWNS);
+        const anchor = spawns[0] || room.storage || room.controller;
+
+        const score = (c: Creep): number => {
+            let s = 0;
+            for (const p of c.body) {
+                if (p.type === HEAL) s += p.boost ? 40 : 20;
+                else if (p.type === RANGED_ATTACK) s += p.boost ? 35 : 18;
+                else if (p.type === ATTACK) s += p.boost ? 30 : 15;
+                else if (p.type === WORK) s += 3;
+                else if (p.type === TOUGH) s += p.boost ? 2 : 1;
+            }
+            const hpRatio = c.hitsMax > 0 ? c.hits / c.hitsMax : 1;
+            s += (1 - hpRatio) * 20;
+            if (anchor) {
+                const d = c.pos.getRangeTo(anchor);
+                s += Math.max(0, 12 - d) * 2;
+            }
+            return s;
+        };
+
+        let target = targets[0];
+        let best = -Infinity;
+        for (const c of targets) {
+            const sc = score(c);
+            if (sc > best) {
+                best = sc;
+                target = c;
+            }
+        }
         
         for (let tower of towers) {
             tower.attack(target);
@@ -50,9 +73,7 @@ var Tower = {
         for (let tower of towers) {
             // 1. Request Energy if low
             if (tower.store.getUsedCapacity(RESOURCE_ENERGY) < 600) {
-                if (!tasksList.some(task => task.type === 'fillTower' && task.id === tower.id)) {
-                    tasksList.push({ type: 'fillTower', id: tower.id });
-                }
+                pushRoomTask(tower.room.name, { type: 'fillTower', id: tower.id });
             }
 
             // 2. Heal Creeps

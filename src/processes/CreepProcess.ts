@@ -24,6 +24,7 @@ import supportAdventurer from '../roles/support/adventurer';
 import supportClaimer from '../roles/support/claimer';
 import supportRepairer from '../roles/support/repairer';
 import supportScavenger from '../roles/support/scavenger';
+import { safeRun } from '@/utils/safe';
 
 const roles: { [key: string]: { run: (creep: Creep) => void } } = {
     'harvester': harvester,
@@ -35,6 +36,7 @@ const roles: { [key: string]: { run: (creep: Creep) => void } } = {
     'defenser': defender,
     'wallRepairer': wallRepairer,
     'centralTransferer': centralTransferer,
+    'Centraltransferer': centralTransferer,
     'leveler': leveler,
     'thinker': thinker,
     'savior': savior,
@@ -65,11 +67,7 @@ export class CreepProcess implements Process {
 
             const roleName = creep.memory.role;
             if (roleName && roles[roleName]) {
-                try {
-                    roles[roleName].run(creep);
-                } catch (e) {
-                    console.log(`Error running creep ${name} (role: ${roleName}):`, e);
-                }
+                safeRun(`Creep:${name}:${roleName}`, () => roles[roleName].run(creep));
             }
         }
     }

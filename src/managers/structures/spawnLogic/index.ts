@@ -1,6 +1,8 @@
 import InsectNameManager from '../../../utils/creepNameManager';
 import { QUEUE_CONFIG, ROLE_CONFIGS } from './spawnConfig';
 import { getCpuMultiplier, getCpuTier } from '../../../utils/cpuPolicy';
+import { ensureRoomTasks, pushRoomTask } from '@/utils/roomTasks';
+import { SpawnSystem } from '@/systems/spawn/SpawnSystem';
 
 // CPU监控工具函数
 const DEBUG_MODE = true; // 通过 Memory 或全局变量控制
@@ -54,17 +56,15 @@ export default {
         if (!Memory.rooms) Memory.rooms = {};
         if (!Memory.rooms[room.name]) Memory.rooms[room.name] = {};
         if (!Memory.rooms[room.name].spawnQueue) Memory.rooms[room.name].spawnQueue = [];
-        if (!Memory.rooms[room.name].tasks) Memory.rooms[room.name].tasks = [];
+        ensureRoomTasks(room.name);
 
         // 检查房间能量是否不足
-        const tasksList = Memory.rooms[room.name].tasks;
-        if (room.energyAvailable < room.energyCapacityAvailable * 0.7 && 
-            !tasksList.some(task => task.type === 'fillExtension')) {
-            tasksList.push({ type: 'fillExtension' });
-            // console.log(`房间 ${room.name} 能量不足，已推送 fillExtension 任务。`);
+        const energyThreshold = Math.min(room.energyCapacityAvailable * 0.7, 750);
+        if (room.energyAvailable < energyThreshold) {
+            pushRoomTask(room.name, { type: 'fillExtension' });
         }
 
-        const tasks = this.generateTasks(room);
+        const tasks = SpawnSystem.generate(room);
         this.executeTasks(room, tasks);
     }),
 

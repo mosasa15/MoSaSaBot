@@ -19,22 +19,6 @@ var AutoRoom = {
         
         const firstSpawn = spawns[0];
         
-        // Initialize Memory
-        if (!Memory.rooms[roomName]) {
-            Memory.rooms[roomName] = {};
-        }
-        if (!Memory.rooms[roomName].tasks) {
-            Memory.rooms[roomName].tasks = [];
-        }
-        
-        const tasksList = Memory.rooms[roomName].tasks;
-        
-        // Emergency Energy Logic
-        if (room.energyAvailable < 750 && !tasksList.some(task => task.type === 'fillExtension')) {
-             tasksList.push({ type: 'fillExtension' });
-             // console.log(`[AutoRoom] ${roomName} Low energy, pushed fillExtension task.`);
-        }
-        
         /*
         if (Memory.settings && Memory.settings.useAutoRoomSpawn === true) {
             const roleConfigs = getRoleConfigs(room);

@@ -56,7 +56,7 @@ const ResourceController = {
         for (const provider of providers) {
             const providerRoom = Game.rooms[provider];
             if (providerRoom && providerRoom.terminal && providerRoom.terminal.store[resourceType] >= amount) {
-                this.createShareTask(provider, resourceType, amount, requester);
+                this.create(provider, resourceType, amount, requester);
                 return true;
             }
         }
@@ -74,9 +74,11 @@ const ResourceController = {
     create(provider, resourceType, amount, targetRoom) {
         const task = {
             type: 'share',
-            resourceType,
-            amount,
-            targetRoom,
+            details: {
+                resourceType,
+                amount,
+                targetRoom
+            }
         };
         if (!Memory.rooms[provider].tasks) {
             Memory.rooms[provider].tasks = [];

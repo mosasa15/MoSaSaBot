@@ -1,5 +1,4 @@
 // @ts-nocheck
-import * as _ from 'lodash';
 global.Talk = [
     '焚烧是一种快感',
     '看着东西被吞噬，烧焦，变样',

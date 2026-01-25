@@ -1,8 +1,10 @@
 // @ts-nocheck
 import market from "../managers/market";
+import { migrateMemory } from '@/core/memorySchema';
 
 
 export function func() {
+    migrateMemory();
     for(var name in Memory.creeps) { // 释放内存
         if(!Game.creeps[name]) {
             delete Memory.creeps[name];

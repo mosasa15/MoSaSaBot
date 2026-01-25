@@ -8,7 +8,6 @@
  */
 
 import { SourceMapConsumer } from 'source-map'
-import * as _ from 'lodash';
 
 declare var require: any;
 
@@ -30,6 +29,15 @@ const getConsumer = function () {
 
 // 缓存映射关系以提高性能
 const cache = {}
+ 
+const escapeHtml = (input: string): string => {
+    return input
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
 
 /**
  * 使用源映射生成堆栈跟踪，并生成原始标志位
@@ -98,8 +106,8 @@ export const errorMapper = function (next, ...args) {
         if (e instanceof Error) {
             // 渲染报错调用栈，沙盒模式用不了这个
             const errorMessage = Game.rooms.sim ?
-                `沙盒模式无法使用 source-map - 显示原始追踪栈<br>${_.escape(e.stack)}` :
-                `${_.escape(sourceMappedStackTrace(e))}`
+                `沙盒模式无法使用 source-map - 显示原始追踪栈<br>${escapeHtml(e.stack || '')}` :
+                `${escapeHtml(sourceMappedStackTrace(e))}`
             
             console.log(`<text style="color:#ef9a9a">${errorMessage}</text>`)
         }

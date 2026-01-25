@@ -5,17 +5,31 @@ export class SourceManager {
         
         if (!Memory.rooms[room.name]) Memory.rooms[room.name] = {};
         if (!Memory.rooms[room.name].spawnQueue) Memory.rooms[room.name].spawnQueue = [];
+        if (!Memory.rooms[room.name].sourceStations) Memory.rooms[room.name].sourceStations = {};
+
+        const miners = room.find(FIND_MY_CREEPS, {
+            filter: c => c.memory.role === 'harvester' && typeof c.memory.workLoc === 'number'
+        });
+        const minersByLoc: Record<number, Creep[]> = {};
+        for (const m of miners) {
+            const loc = m.memory.workLoc as number;
+            if (!minersByLoc[loc]) minersByLoc[loc] = [];
+            minersByLoc[loc].push(m);
+        }
+        for (const locKey in minersByLoc) {
+            const k = Number(locKey);
+            minersByLoc[k].sort((a, b) => (b.ticksToLive || 0) - (a.ticksToLive || 0));
+        }
 
         sources.forEach((source: Source, index: number) => {
-             const miners = room.find(FIND_MY_CREEPS, {
-                 filter: c => c.memory.role === 'harvester' && c.memory.workLoc === index
-             });
-             
-             const minerDying = miners.length > 0 && miners[0].ticksToLive && miners[0].ticksToLive < 100;
-
-             if (miners.length === 0 || minerDying) {
-                 this.requestMiner(room, index);
-             }
+            const list = minersByLoc[index] || [];
+            const miner = list.length > 0 ? list[0] : null;
+            const station = Memory.rooms[room.name].sourceStations[index] || (Memory.rooms[room.name].sourceStations[index] = {});
+            const pathTime = typeof station.pathTime === 'number' ? station.pathTime : 30;
+            const spawnTime = miner ? miner.body.length * 3 : 60;
+            const buffer = 20;
+            const needReplace = !miner || (miner.ticksToLive !== undefined && miner.ticksToLive <= pathTime + spawnTime + buffer);
+            if (needReplace) this.requestMiner(room, index);
         });
     }
 

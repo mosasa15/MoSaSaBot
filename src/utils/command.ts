@@ -5,9 +5,36 @@ global.A = function(){
 }
 
 global.help = function(){
-    console.log(1);
+    console.log('bot.setLogLevel(level)  level=debug|info|warn|error');
+    console.log('bot.enableSystem(name, enabled)  name=remoteOps|market|hud|metrics');
+    console.log('bot.setAllies([name...])');
+    console.log('bot.stats()  打印 Memory.stats.bot 摘要');
     return 0;
 }
+ 
+global.bot = {
+    setLogLevel(level) {
+        if (!Memory.settings) Memory.settings = {};
+        Memory.settings.logLevel = level;
+        return Memory.settings.logLevel;
+    },
+    enableSystem(name, enabled) {
+        if (!Memory.settings) Memory.settings = {};
+        if (!Memory.settings.systems) Memory.settings.systems = {};
+        Memory.settings.systems[name] = enabled;
+        return Memory.settings.systems;
+    },
+    setAllies(list) {
+        if (!Memory.diplomacy) Memory.diplomacy = { allies: [], enemies: [] };
+        Memory.diplomacy.allies = Array.isArray(list) ? list : [];
+        return Memory.diplomacy.allies;
+    },
+    stats() {
+        const bot = Memory.stats && Memory.stats.bot ? Memory.stats.bot : {};
+        console.log(JSON.stringify(bot));
+        return 0;
+    }
+};
 
 global.pushTask = function(roomName, type) {
     if (!Memory.rooms[roomName]) {

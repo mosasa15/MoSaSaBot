@@ -1,9 +1,10 @@
+import { ensureRoomTasks, pushRoomTask, removeRoomTasks } from '@/utils/roomTasks';
+
 var Link = {  
     run: function( roomName ) {  
         if (!Memory.rooms[roomName]) Memory.rooms[roomName] = {};
         const roomMemory = Memory.rooms[roomName];  
-        if (!roomMemory.tasks) roomMemory.tasks = [];
-        const tasksList = roomMemory.tasks;  
+        const tasksList = ensureRoomTasks(roomName);
         
         let room = Game.rooms[roomName];
         if (!room) return;
@@ -66,27 +67,23 @@ var Link = {
             if(link.store[RESOURCE_ENERGY] > 700){
                 const result = link.transferEnergy(upgradeLink);
                 if( result === OK){
-                    Memory.rooms[link.room.name].tasks = tasks.filter(task => task.type !== 'transferToUpgradeLink');
+                    removeRoomTasks(link.room.name, t => t.type === 'transferToUpgradeLink');
                 }
             }
         } else if( link.store[RESOURCE_ENERGY] > 700 && !tasks.some(task => task.type === 'transferToStorage') ){
             // If full and no demand, request to empty into storage
-            Memory.rooms[link.room.name].tasks.push({
-                type: 'transferToStorage'
-            });
+            pushRoomTask(link.room.name, { type: 'transferToStorage' });
         }
     },
 
     runAsUpgradeLink: function(link, roomMemory, tasks) {  
         if (link.store[RESOURCE_ENERGY] >= 600) {  
             if(tasks.some(task => task.type === 'transferToUpgradeLink')){
-                Memory.rooms[link.room.name].tasks = tasks.filter(task => task.type !== 'transferToUpgradeLink');
+                removeRoomTasks(link.room.name, t => t.type === 'transferToUpgradeLink');
             }
         } else if (link.store[RESOURCE_ENERGY] < 100 && !tasks.some(task => task.type === 'transferToUpgradeLink')) {  
             // Request energy
-            Memory.rooms[link.room.name].tasks.push({
-                type: 'transferToUpgradeLink'
-            }); 
+            pushRoomTask(link.room.name, { type: 'transferToUpgradeLink' });
         }  
     },  
 

@@ -8,9 +8,12 @@ const roleWallRepairer = {
         //     creep.memory.boosted = false;  
         // }  
         //const sourceRoomName = creep.memory.sourceRoomName;   
+        const roomName = creep.room.name;
+        const roomMemory = Memory.rooms && Memory.rooms[roomName] ? Memory.rooms[roomName] : ({} as any);
         const storage = creep.room.storage;  
         //const tasksList = Memory.rooms[creep.room.name].tasks;
-        const targetLink = creep.room[Memory.rooms[creep.room.name].upgradeLinkId]; 
+        const upgradeLinkId = roomMemory.upgradeLinkId as Id<StructureLink> | undefined;
+        const targetLink = upgradeLinkId ? (Game.getObjectById(upgradeLinkId) as StructureLink | null) : null;
         this.toggleState(creep);  
         if (creep.memory.building) { 
             creep.memory.dontPullMe = true; 
@@ -21,7 +24,9 @@ const roleWallRepairer = {
             // 检查是否存在 targetRampartId 并且在房间内有效
             const ramparts = creep.room.rampart;
             let targetRampart = null;
-            const Max = 300000000;
+            const Max = (roomMemory.defense && typeof roomMemory.defense.wallTargetHits === 'number')
+                ? roomMemory.defense.wallTargetHits
+                : 300000000;
             if (!targetRampart) {
                 if ( targetLink ) {
                     const upgradeLinkPos = targetLink.pos;
@@ -38,7 +43,7 @@ const roleWallRepairer = {
             }
             if (creep.memory.targetRampartId) {
                 const targetRampartId = creep.memory.targetRampartId;
-                targetRampart = creep.room[targetRampartId];
+                targetRampart = Game.getObjectById(targetRampartId);
                 // 检查 rampart 是否仍然有效（hits 低于 100M）
                 if (targetRampart  && targetRampart.hits < Max) {
                     // 继续使用当前 targetRampart
@@ -58,7 +63,6 @@ const roleWallRepairer = {
     
 
     buildRampart: function(creep, closestRamparts,targetLink) { 
-        creep.withdraw(targetLink, RESOURCE_ENERGY)
         if (creep.repair(closestRamparts) == ERR_NOT_IN_RANGE) {  // 如果不在修复范围内  
             creep.moveTo(closestRamparts, {visualizePathStyle: {stroke: '#ffffff'}});  // 绘制路径并前往Rampart  
         }  
@@ -108,7 +112,7 @@ const roleWallRepairer = {
                 creep.moveTo(targetLink, { visualizePathStyle: { stroke: '#ffaa00' } });  
             }  
         } else {
-            if( storage.store[RESOURCE_ENERGY] > 0 ) {
+            if( storage && storage.store[RESOURCE_ENERGY] > 0 ) {
                 if (creep.withdraw(storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {  
                     creep.moveTo(storage, { visualizePathStyle: { stroke: '#ffaa00' } });  
                 }  

@@ -1,5 +1,6 @@
 import { ECONOMY_CONTROL } from '@/config/economyConfig';
 import { DOWNGRADE_PROTECTION } from '@/config/protectionConfig';
+import { ensureRoomTasks } from '@/utils/roomTasks';
 
 var roleUpgrader = {  
     /** @param {Creep} creep **/  
@@ -8,8 +9,7 @@ var roleUpgrader = {
         const roomName = room.name;
         if (!Memory.rooms) Memory.rooms = {};
         if (!Memory.rooms[roomName]) Memory.rooms[roomName] = {};
-        if (!Memory.rooms[roomName].tasks) Memory.rooms[roomName].tasks = [];
-        const tasksList = Memory.rooms[roomName].tasks;
+        const tasksList = ensureRoomTasks(roomName);
         creep.memory.dontPullMe = false;  
         const pauseUpgrade = this.shouldPauseUpgrade(creep, tasksList);
         
@@ -24,14 +24,12 @@ var roleUpgrader = {
                 this.upgradeController(creep);  
             }
         } else {  
-            // Try to find upgradeLink or Storage
-            let upgradeLink = null;
-            if (Memory.rooms[roomName].upgradeLinkId) {
-                upgradeLink = room[Memory.rooms[roomName].upgradeLinkId];
-            }
+            const roomMemory = Memory.rooms[roomName] || {};
+            const upgradeLink = roomMemory.upgradeLinkId ? (Game.getObjectById(roomMemory.upgradeLinkId) as StructureLink | null) : null;
+            const upgradeContainer = this.getUpgradeContainer(room, roomMemory);
             const storage = room.storage;  
             
-            this.harvestEnergy(creep, upgradeLink, storage, pauseUpgrade);  
+            this.harvestEnergy(creep, upgradeLink, upgradeContainer, storage, pauseUpgrade);  
         } 
     },  
     toggleState: function(creep) {  
@@ -70,6 +68,18 @@ var roleUpgrader = {
         const storageEnergy = room.storage ? (room.storage.store[RESOURCE_ENERGY] || 0) : undefined;
 
         const hasFillExtensionTask = Array.isArray(tasksList) && tasksList.some(t => t && t.type === 'fillExtension');
+        const hasFillTowerTask = Array.isArray(tasksList) && tasksList.some(t => t && t.type === 'fillTower');
+        let managerPresent = true;
+        if (hasFillTowerTask) {
+            const cached = Memory.rooms[roomName].economy.managerPresent;
+            if (Game.time % 5 === 0 || cached === undefined) {
+                managerPresent = room.find(FIND_MY_CREEPS, { filter: c => c.memory.role === 'manager' }).length > 0;
+                Memory.rooms[roomName].economy.managerPresent = managerPresent;
+            } else {
+                managerPresent = cached;
+            }
+        }
+        const noManager = hasFillTowerTask && !managerPresent;
 
         const prevPaused = Memory.rooms[roomName].economy.pauseUpgrading === true;
         let paused = prevPaused;
@@ -81,11 +91,28 @@ var roleUpgrader = {
         } else {
             const energyLow = energyRatio <= throttle.ENERGY_RATIO_PAUSE;
             const storageLow = storageEnergy !== undefined && storageEnergy <= throttle.STORAGE_ENERGY_PAUSE;
-            if (hasFillExtensionTask || energyLow || storageLow) paused = true;
+            if (hasFillExtensionTask || energyLow || storageLow || noManager) paused = true;
         }
 
         Memory.rooms[roomName].economy.pauseUpgrading = paused;
         return paused;
+    },
+
+    getUpgradeContainer: function(room, roomMemory) {
+        const controller = room.controller;
+        if (!controller) return null;
+        const memId = roomMemory.upgradeContainerId;
+        if (memId) {
+            const obj = Game.getObjectById(memId);
+            if (obj) return obj;
+        }
+        if (Game.time % 50 !== 0) return null;
+        const containers = controller.pos.findInRange(FIND_STRUCTURES, 3, {
+            filter: (s: any) => s.structureType === STRUCTURE_CONTAINER
+        });
+        const container = containers && containers.length > 0 ? containers[0] : null;
+        if (container) roomMemory.upgradeContainerId = container.id;
+        return container;
     },
 
     isDowngradeUrgent: function(room) {
@@ -140,7 +167,7 @@ var roleUpgrader = {
         return true;
     },
 
-    harvestEnergy: function(creep, upgradeLink, storage, pauseUpgrade) {  
+    harvestEnergy: function(creep, upgradeLink, upgradeContainer, storage, pauseUpgrade) {  
         const terminal = creep.room.terminal
         const throttle = ECONOMY_CONTROL.UPGRADE_THROTTLE;
         const storageEnergy = storage ? (storage.store[RESOURCE_ENERGY] || 0) : 0;
@@ -151,6 +178,13 @@ var roleUpgrader = {
              if (creep.withdraw(upgradeLink, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {  
                 creep.moveTo(upgradeLink, { visualizePathStyle: { stroke: '#ffaa00' } });  
             }  
+            return;
+        }
+
+        if (upgradeContainer && upgradeContainer.store && upgradeContainer.store[RESOURCE_ENERGY] > 0) {
+            if (creep.withdraw(upgradeContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(upgradeContainer, { visualizePathStyle: { stroke: '#ffaa00' } });
+            }
             return;
         }
         
@@ -167,18 +201,6 @@ var roleUpgrader = {
             if (creep.withdraw(terminal, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {  
                 creep.moveTo(terminal, { visualizePathStyle: { stroke: '#ffaa00' } });  
             } 
-            return;
-        }
-
-        // Priority 4: Any Container (Global Search)
-        // Find closest container with enough energy
-        const container = creep.pos.findClosestByRange(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 100 // Don't drain nearly empty ones
-        });
-        if (container) {
-            if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(container, { visualizePathStyle: { stroke: '#ffaa00' } });
-            }
             return;
         }
         
